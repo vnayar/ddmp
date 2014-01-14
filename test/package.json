@@ -1,0 +1,7 @@
+{
+	"name": "ddmp-test",
+	"description": "Test library for DDPM.",
+	"dependencies": {
+		"ddmp": {"path": "..", "version": "~master"}
+	}
+}
