@@ -22,9 +22,10 @@
  */
 module ddmp.match;
 
+import std.algorithm : min, max;
 import std.array;
+import std.math : abs;
 import std.string;
-import std.algorithm:min,max,abs;
 
 import ddmp.util;
 
