@@ -29,8 +29,8 @@ import std.string;
 
 import ddmp.util;
 
-const float MATCH_THRESHOLD = 0.5f;
-const int MATCH_DISTANCE = 1000; 
+float MATCH_THRESHOLD = 0.5f;
+int MATCH_DISTANCE = 1000; 
 
 /**
  * Locate the best instance of 'pattern' in 'text' near 'loc'.

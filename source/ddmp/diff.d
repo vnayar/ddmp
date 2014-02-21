@@ -20,17 +20,25 @@
  * Diff Match and Patch
  * http://code.google.com/p/google-diff-match-patch/
  */
- module ddmp.diff;
+module ddmp.diff;
+
+import ddmp.util;
 
 import std.array;
 import std.conv;
-import std.string:indexOf,endsWith,startsWith;
+import std.datetime : SysTime, Clock, UTC;
+import std.exception : enforce;
+import std.string : indexOf, endsWith, startsWith;
 import std.uni;
 import std.regex;
-import std.algorithm:min,max;
+import std.algorithm : min, max;
 import std.digest.sha;
+import core.time;
 
-import ddmp.util;
+
+Duration diffTimeout = 1.seconds;
+int DIFF_EDIT_COST = 4;
+
 
 /**
 * Compute and return the source text (all equalities and deletions).
@@ -91,6 +99,114 @@ int levenshtein(Diff[] diffs) {
     }
     levenshtein += max(insertions, deletions);
     return levenshtein;
+}
+
+
+/**
+ * Crush the diff into an encoded string which describes the operations
+ * required to transform text1 into text2.
+ * E.g. =3\t-2\t+ing  -> Keep 3 chars, delete 2 chars, insert 'ing'.
+ * Operations are tab-separated.  Inserted text is escaped using %xx
+ * notation.
+ * @param diffs Array of Diff objects.
+ * @return Delta text.
+ */
+string toDelta(in Diff[] diffs)
+{
+    import std.format : formattedWrite;
+    import std.uri : encode;
+    auto text = appender!string;
+    foreach (aDiff; diffs) {
+        final switch (aDiff.operation) {
+            case Operation.INSERT:
+                text.formattedWrite("+%s\t", encode(aDiff.text).replace("+", " "));
+                break;
+            case Operation.DELETE:
+                text.formattedWrite("-%s\t", aDiff.text.length);
+                break;
+            case Operation.EQUAL:
+                text.formattedWrite("=%s\t", aDiff.text.length);
+                break;
+        }
+    }
+    string delta = text.data;
+    if (delta.length != 0) {
+        // Strip off trailing tab character.
+        delta = delta[0 .. $-1];
+        delta = unescapeForEncodeUriCompatability(delta);
+    }
+    return delta;
+}
+
+/**
+ * Given the original text1, and an encoded string which describes the
+ * operations required to transform text1 into text2, comAdde the full diff.
+ * @param text1 Source string for the diff.
+ * @param delta Delta text.
+ * @return Array of Diff objects or null if invalid.
+ * @throws ArgumentException If invalid input.
+ */
+Diff[] fromDelta(string text1, string delta)
+{
+    import std.string : format;
+    import std.uri : decode;
+
+    auto diffs = appender!(Diff[]);
+    int pointer = 0;  // Cursor in text1
+    foreach (token; delta.splitter("\t")) {
+        if (token.length == 0) {
+            // Blank tokens are ok (from a trailing \t).
+            continue;
+        }
+        // Each token begins with a one character parameter which specifies the
+        // operation of this token (delete, insert, equality).
+        string param = token[1 .. $];
+        switch (token[0]) {
+            case '+':
+                // decode would change all "+" to " "
+                param = param.replace("+", "%2b");
+                param = decode(param);
+                //} catch (UnsupportedEncodingException e) {
+                //  // Not likely on modern system.
+                //  throw new Error("This system does not support UTF-8.", e);
+                //} catch (IllegalArgumentException e) {
+                //  // Malformed URI sequence.
+                //  throw new IllegalArgumentException(
+                //      "Illegal escape in diff_fromDelta: " + param, e);
+                //}
+                diffs ~= Diff(Operation.INSERT, param);
+                break;
+            case '-': // Fall through.
+            case '=':
+                int n;
+                try {
+                    n = param.to!int;
+                } catch (ConvException e) {
+                    throw new Exception("Invalid number in diff_fromDelta: " ~ param);
+                }
+                enforce (n >= 0, "Negative number in diff_fromDelta: " ~ param);
+
+                string text;
+                enforce (pointer + n <= text1.length, 
+                    format("Delta length (%s) larger than source text length (%s).",
+                    pointer, text1.length));
+                text = text1[pointer .. pointer+n];
+                pointer += n;
+                if (token[0] == '=') {
+                    diffs ~= Diff(Operation.EQUAL, text);
+                } else {
+                    diffs ~= Diff(Operation.DELETE, text);
+                }
+                break;
+            default:
+                // Anything else is an error.
+                throw new Exception(
+                "Invalid diff operation in diff_fromDelta: " ~ token[0]);
+        }
+    }
+    if (pointer != text1.length)
+        throw new Exception(format("Delta length (´%s) smaller than source text length (%s).", pointer, text1.length));
+    return diffs.data;
 }
 
 struct LinesToCharsResult {
@@ -263,7 +379,56 @@ struct Diff {
 }
 
 
-Diff[] diff_main(string text1, string text2, bool checklines = true){
+/**
+ * Find the differences between two texts.
+ * Run a faster, slightly less optimal diff.
+ * This method allows the 'checklines' of diff_main() to be optional.
+ * Most of the time checklines is wanted, so default to true.
+ * @param text1 Old string to be diffed.
+ * @param text2 New string to be diffed.
+ * @return List of Diff objects.
+ */
+Diff[] diff_main(string text1, string text2)
+{
+    return diff_main(text1, text2, true);
+}
+
+/**
+ * Find the differences between two texts.
+ * @param text1 Old string to be diffed.
+ * @param text2 New string to be diffed.
+ * @param checklines Speedup flag.  If false, then don't run a
+ *     line-level diff first to identify the changed areas.
+ *     If true, then run a faster slightly less optimal diff.
+ * @return List of Diff objects.
+ */
+Diff[] diff_main(string text1, string text2, bool checklines)
+{
+    // Set a deadline by which time the diff must be complete.
+    SysTime deadline;
+    if (diffTimeout <= 0.seconds) {
+        deadline = SysTime.max;
+    } else {
+        deadline = Clock.currTime(UTC()) + diffTimeout;
+    }
+    return diff_main(text1, text2, checklines, deadline);
+}
+
+/**
+ * Find the differences between two texts.  Simplifies the problem by
+ * stripping any common prefix or suffix off the texts before diffing.
+ * @param text1 Old string to be diffed.
+ * @param text2 New string to be diffed.
+ * @param checklines Speedup flag.  If false, then don't run a
+ *     line-level diff first to identify the changed areas.
+ *     If true, then run a faster slightly less optimal diff.
+ * @param deadline Time when the diff should be complete by.  Used
+ *     internally for recursive calls.  Users should set DiffTimeout
+ *     instead.
+ * @return List of Diff objects.
+ */
+Diff[] diff_main(string text1, string text2, bool checklines, SysTime deadline)
+{
     Diff[] diffs;
     if( text1 == text2 ){
         if( text1.length != 0 ) diffs ~= Diff(Operation.EQUAL, text1);
@@ -281,7 +446,7 @@ Diff[] diff_main(string text1, string text2, bool checklines = true){
     text2 = text2.substr(0, text2.length - pos);
 
     // Compute the diff on the middle block.
-    diffs = computeDiffs(text1, text2, checklines);
+    diffs = computeDiffs(text1, text2, checklines, deadline);
 
       // Restore the prefix and suffix.
     if( prefix.length != 0 ) {
@@ -321,14 +486,11 @@ struct HalfMatch {
  *     suffix of text1, the prefix of text2, the suffix of text2 and the
  *     common middle.  Or null if there was no match.
  */
- import std.stdio;
 bool halfMatch(string text1, string text2, out HalfMatch halfmatch){
-    /*
-      TODO:
-      if (this.Diff_Timeout <= 0) {
+    if (diffTimeout <= 0.seconds) {
         // Don't risk returning a non-optimal diff if we have unlimited time.
-        return null;
-    }*/
+        return false;
+    }
     string longtext = text1.length > text2.length ? text1 : text2;
     string shorttext = text1.length > text2.length ? text2 : text1;
     if( longtext.length < 4 || shorttext.length * 2 < longtext.length ) return false; //pointless
@@ -403,7 +565,8 @@ bool halfMatchI(string longtext, string shorttext, int i, out HalfMatch hm){
      * @param deadline Time when the diff should be complete by.
      * @return List of Diff objects.
      */
-Diff[] computeDiffs(string text1, string text2, bool checklines) {
+Diff[] computeDiffs(string text1, string text2, bool checklines, SysTime deadline)
+{
     Diff[] diffs;
 
     if( text1.length == 0 ){
@@ -434,8 +597,8 @@ Diff[] computeDiffs(string text1, string text2, bool checklines) {
     HalfMatch hm;
     auto is_hm = halfMatch(text1, text2, hm);
     if( is_hm ){
-        auto diffs_a = diff_main(hm.prefix1, hm.prefix2, checklines);
-        auto diffs_b = diff_main(hm.suffix1, hm.suffix2, checklines);
+        auto diffs_a = diff_main(hm.prefix1, hm.prefix2, checklines, deadline);
+        auto diffs_b = diff_main(hm.suffix1, hm.suffix2, checklines, deadline);
 
         diffs = diffs_a;
         diffs ~= Diff(Operation.EQUAL, hm.commonMiddle);
@@ -444,17 +607,17 @@ Diff[] computeDiffs(string text1, string text2, bool checklines) {
     }
 
     if( checklines && text1.length > 100 && text2.length > 100 ){
-        return diff_lineMode(text1, text2);
+        return diff_lineMode(text1, text2, deadline);
     }
 
-    return bisect(text1, text2);
+    return bisect(text1, text2, deadline);
 }
 
-Diff[] diff_lineMode(string text1, string text2)
+Diff[] diff_lineMode(string text1, string text2, SysTime deadline)
 {
     auto b = linesToChars(text1, text2);
 
-    auto diffs = diff_main(b.text1, b.text2, false);
+    auto diffs = diff_main(b.text1, b.text2, false, deadline);
 
     charsToLines(diffs, b.uniqueStrings);
     cleanupSemantic(diffs);
@@ -483,7 +646,7 @@ Diff[] diff_lineMode(string text1, string text2)
 
                     pointer = pointer - count_delete - count_insert;
 
-                    auto a = diff_main(text_delete, text_insert, false);
+                    auto a = diff_main(text_delete, text_insert, false, deadline);
                     diffs.insert(pointer, a);
                     pointer += a.length;
                 }
@@ -499,7 +662,7 @@ Diff[] diff_lineMode(string text1, string text2)
     return diffs;
 }
 
-Diff[] bisect(string text1, string text2)
+Diff[] bisect(string text1, string text2, SysTime deadline)
 {
     auto text1_len = text1.length;
     auto text2_len = text2.length;
@@ -521,7 +684,10 @@ Diff[] bisect(string text1, string text2)
     auto k2start = 0;
     auto k2end = 0;
     for( auto d = 0; d < max_d; d++ ){
-
+        // Bail out if deadline is reached.
+        if (Clock.currTime(UTC()) > deadline) {
+            break;
+        }
 
         for( int k1 = -d + k1start; k1 <= d - k1end; k1 += 2 ){
             auto k1_offset = v_offset + k1;
@@ -545,7 +711,7 @@ Diff[] bisect(string text1, string text2)
                 auto k2_offset = v_offset + delta - k1;
                 if( k2_offset >= 0 && k2_offset < v_len && v2[k2_offset] != -1) {
                     auto x2 = text1_len - v2[k2_offset];
-                    if( x1 >= x2 ) return bisectSplit(text1, text2, x1, y1);
+                    if( x1 >= x2 ) return bisectSplit(text1, text2, x1, y1, deadline);
                 }
             } 
         }
@@ -580,7 +746,7 @@ Diff[] bisect(string text1, string text2)
                     x2 = text1_len - v2[k2_offset];
                     if (x1 >= x2) {
                         // Overlap detected.
-                        return bisectSplit(text1, text2, x1, y1);
+                        return bisectSplit(text1, text2, x1, y1, deadline);
                     }
                 }
             }
@@ -593,14 +759,15 @@ Diff[] bisect(string text1, string text2)
 }
 
 
-Diff[] bisectSplit(string text1, string text2, int x, int y) {
+Diff[] bisectSplit(string text1, string text2, int x, int y, SysTime deadline)
+{
     auto text1a = text1.substr(0, x);
     auto text2a = text2.substr(0, y);
     auto text1b = text1.substr(x);
     auto text2b = text2.substr(y);
 
-    Diff[] diffs = diff_main(text1a, text2a, false);
-    Diff[] diffsb = diff_main(text1b, text2b, false);
+    Diff[] diffs = diff_main(text1a, text2a, false, deadline);
+    Diff[] diffsb = diff_main(text1b, text2b, false, deadline);
     diffs ~= diffsb;
     return diffs;
 }
@@ -908,7 +1075,6 @@ int cleanupSemanticScore(string one, string two)
 }
 
 
-const int DIFF_EDIT_COST = 4;
 /**
  * Reduce the number of edits by eliminating operationally trivial
  * equalities.
@@ -1011,4 +1177,28 @@ int xIndex(Diff[] diffs, int loc){
     }
     // Add the remaining character length.
     return last_chars2 + (loc - last_chars1);
+}
+
+/**
+ * Unescape selected chars for compatability with JavaScript's encodeURI.
+ * In speed critical applications this could be dropped since the
+ * receiving application will certainly decode these fine.
+ * Note that this function is case-sensitive.  Thus "%3F" would not be
+ * unescaped.  But this is ok because it is only called with the output of
+ * HttpUtility.UrlEncode which returns lowercase hex.
+ *
+ * Example: "%3f" -> "?", "%24" -> "$", etc.
+ *
+ * @param str The string to escape.
+ * @return The escaped string.
+ */
+public static string unescapeForEncodeUriCompatability(string str)
+{
+    // FIXME: this is ridiculously inefficient
+    return str.replace("%21", "!").replace("%7e", "~")
+      .replace("%27", "'").replace("%28", "(").replace("%29", ")")
+      .replace("%3b", ";").replace("%2f", "/").replace("%3f", "?")
+      .replace("%3a", ":").replace("%40", "@").replace("%26", "&")
+      .replace("%3d", "=").replace("%2b", "+").replace("%24", "$")
+      .replace("%2c", ",").replace("%23", "#");
 }

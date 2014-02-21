@@ -29,9 +29,9 @@ import ddmp.diff;
 import ddmp.match;
 import ddmp.util;
 
-const int MATCH_MAXBITS = 32;
-const int PATCH_MARGIN = 4;
-const float PATCH_DELETE_THRESHOLD = 0.5f;
+int MATCH_MAXBITS = 32;
+int PATCH_MARGIN = 4;
+float PATCH_DELETE_THRESHOLD = 0.5f;
 
 struct Patch {
     Diff[] diffs;
@@ -41,7 +41,7 @@ struct Patch {
     int length2;
 
     string toString()
-    {
+    const {
         auto app = appender!string();
         app.put("@@ -");
         if( length1 == 0 ){
@@ -489,4 +489,99 @@ void splitMax(Patch[] patches)
 			}
 		}
 	}
+}
+
+/**
+ * Take a list of patches and return a textual representation.
+ * @param patches List of Patch objects.
+ * @return Text representation of patches.
+ */
+public string patch_toText(in Patch[] patches)
+{
+	auto text = appender!string();
+	foreach (aPatch; patches)
+		text ~= aPatch.toString();
+	return text.data;
+}
+
+/**
+ * Parse a textual representation of patches and return a List of Patch
+ * objects.
+ * @param textline Text representation of patches.
+ * @return List of Patch objects.
+ * @throws ArgumentException If invalid input.
+ */
+public Patch[] patch_fromText(string textline)
+{
+	import std.regex : regex, matchFirst;
+	import std.string : format, split;
+
+	auto patches = appender!(Patch[])();
+	if (textline.length == 0) return null;
+
+	auto text = textline.split("\n");
+	int textPointer = 0;
+	auto patchHeader = regex("^@@ -(\\d+),?(\\d*) \\+(\\d+),?(\\d*) @@$");
+	char sign;
+	string line;
+	while (textPointer < text.length) {
+		auto m = matchFirst(text[textPointer], patchHeader);
+		enforce (m, "Invalid patch string: " ~ text[textPointer]);
+		Patch patch;
+		patch.start1 = m[0].to!int;
+		if (m[1].length == 0) {
+			patch.start1--;
+			patch.length1 = 1;
+		} else if (m[1] == "0") {
+			patch.length1 = 0;
+		} else {
+			patch.start1--;
+			patch.length1 = m[1].to!int;
+		}
+
+		patch.start2 = m[2].to!int;
+		if (m[3].length == 0) {
+			patch.start2--;
+			patch.length2 = 1;
+		} else if (m[3] == "0") {
+			patch.length2 = 0;
+		} else {
+			patch.start2--;
+			patch.length2 = m[3].to!int;
+		}
+		textPointer++;
+
+		while (textPointer < text.length) {
+			import std.uri : decode;
+			if (textPointer >= text.length || !text[textPointer].length) {
+				// Blank line?  Whatever.
+				textPointer++;
+				continue;
+			}
+			sign = text[textPointer][0];
+			line = text[textPointer][1 .. $];
+			line = line.replace("+", "%2b");
+			line = decode(line);
+			if (sign == '-') {
+				// Deletion.
+				patch.diffs ~= Diff(Operation.DELETE, line);
+			} else if (sign == '+') {
+				// Insertion.
+				patch.diffs ~= Diff(Operation.INSERT, line);
+			} else if (sign == ' ') {
+				// Minor equality.
+				patch.diffs ~= Diff(Operation.EQUAL, line);
+			} else if (sign == '@') {
+				// Start of next patch.
+				break;
+			} else {
+				// WTF?
+				throw new Exception(format("Invalid patch mode '%s' in: %s", sign, line));
+			}
+			textPointer++;
+		}
+
+		patches ~= patch;
+	}
+	return patches.data;
 }
