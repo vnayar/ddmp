@@ -263,7 +263,7 @@ struct Diff {
 }
 
 
-Diff[] diff_main(string text1, string text2, bool checklines){
+Diff[] diff_main(string text1, string text2, bool checklines = true){
     Diff[] diffs;
     if( text1 == text2 ){
         if( text1.length != 0 ) diffs ~= Diff(Operation.EQUAL, text1);
@@ -287,7 +287,7 @@ Diff[] diff_main(string text1, string text2, bool checklines){
     if( prefix.length != 0 ) {
         diffs.insert(0, [Diff(Operation.EQUAL, prefix)]);
     }
-    if( prefix.length != 0 ) {
+    if( suffix.length != 0 ) {
         diffs ~= Diff(Operation.EQUAL, suffix);
     }
 
@@ -588,7 +588,7 @@ Diff[] bisect(string text1, string text2)
     }
     Diff[] diffs;
     diffs ~= Diff(Operation.DELETE, text1);
-    diffs ~= Diff(Operation.DELETE, text2);
+    diffs ~= Diff(Operation.INSERT, text2);
     return diffs;
 }
 
@@ -637,7 +637,8 @@ void cleanupSemantic(ref Diff[] diffs)
                 && (last_equality.length <= max(length_insertions2, length_deletions2))) {
                 // Duplicate record.
                 diffs.insert(equalities[$-1], [Diff(Operation.DELETE, last_equality)]);
-                
+                diffs[equalities[$-1]+1] = Diff(Operation.INSERT, diffs[equalities[$-1]+1].text);
+
                 //Correct to pop twice ??????
                 equalities = equalities[0..$-1]; 
                 if( equalities.length > 0 ){
@@ -701,7 +702,7 @@ void cleanupSemantic(ref Diff[] diffs)
  * e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
  * @param diffs List of Diff objects.
  */
-void cleanupSemanticLossless(Diff[] diffs)
+void cleanupSemanticLossless(ref Diff[] diffs)
 {
     auto pointer = 1;
     // Intentionally ignore the first and last element (don't need checking).
