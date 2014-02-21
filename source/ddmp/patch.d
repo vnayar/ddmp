@@ -261,6 +261,7 @@ Patch[] patch_make(string text1, Diff[] diffs)
  	text = nullPadding ~ text ~ nullPadding;
  	splitMax(patches);
 
+ 	result.patchesApplied.length = patches.length; // init patchesApplied array
  	int x = 0;
 	// delta keeps track of the offset between the expected and actual
 	// location of the previous patch.  If there are patches expected at
@@ -382,16 +383,16 @@ string addPadding(Patch[] patches)
 	}
 
 	// Add some padding on end of last diff.
-	patch = patches[$];
+	patch = patches[$-1];
 	diffs = patch.diffs;
-	if( diffs.length == 0 || diffs[$].operation != Operation.EQUAL) {
+	if( diffs.length == 0 || diffs[$-1].operation != Operation.EQUAL) {
 		// Add nullPadding equality.
 		diffs ~= Diff(Operation.EQUAL, nullPadding);
 		patch.length1 += paddingLength;
 		patch.length2 += paddingLength;
-	} else if (paddingLength > diffs[$].text.length) {
+	} else if (paddingLength > diffs[$-1].text.length) {
 		// Grow last equality.
-		Diff lastDiff = diffs[$];
+		Diff lastDiff = diffs[$-1];
 		auto extraLength = paddingLength - lastDiff.text.length;
 		lastDiff.text ~= nullPadding.substr(0, extraLength);
 		patch.length1 += extraLength;
