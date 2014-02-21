@@ -271,10 +271,7 @@ void testDiffCleanupSemanticLossless() {
   {
     // Hitting the start.
     Diff[] diffs = [Diff(Operation.EQUAL, "a"), Diff(Operation.DELETE, "a"), Diff(Operation.EQUAL, "ax")];
-    writeln(diffs);
-    writeln("################");
     cleanupSemanticLossless(diffs);
-    writeln(diffs);
     assert([Diff(Operation.DELETE, "a"), Diff(Operation.EQUAL, "aax")] == diffs);
   }
   {
@@ -882,7 +879,8 @@ void testPatchApply() {
 
 void assertEquals(T, U)(T t, U u)
 {
-  assert(t == u);
+  import std.string : format;
+  assert(t == u, format("FAIL: %s == %s", t, u));
 }
 
 void main()
@@ -896,7 +894,7 @@ void main()
   testDiffCleanupSemanticLossless();
   testDiffCleanupSemantic();
   testDiffCleanupEfficiency();
-  //testDiffPrettyHtml();
+  //testDiffPrettyHtml(); // FIXME: implement HTML output
   testDiffText();
   testDiffDelta();
   testDiffXIndex();
