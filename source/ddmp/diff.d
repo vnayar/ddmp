@@ -318,13 +318,13 @@ int commonOverlap(string text1, string text2) {
     int best = 0;
     int length = 1;
     while (true) {
-        string pattern = text1.substr(text_length - length);
+        string pattern = text1[text_length - length .. $];
         int found = text2.indexOf(pattern);
         if (found == -1) {
             return best;
         }
         length += found;
-        if (found == 0 || text1.substr(text_length - length) == text2.substr(0, length)) {
+        if (found == 0 || text1[text_length - length .. $] == text2[0 .. length]) {
             best = length;
             length++;
         }
@@ -436,14 +436,14 @@ Diff[] diff_main(string text1, string text2, bool checklines, SysTime deadline)
     }
 
     auto pos = commonPrefix(text1, text2);
-    auto prefix = text1.substr(0, pos);
-    text1 = text1.substr(pos);
-    text2 = text2.substr(pos);
+    auto prefix = text1[0 .. pos];
+    text1 = text1[pos .. $];
+    text2 = text2[pos .. $];
 
     pos = commonSuffix(text1, text2);
-    auto suffix = text1.substr(text1.length - pos);
-    text1 = text1.substr(0, text1.length - pos);    
-    text2 = text2.substr(0, text2.length - pos);
+    auto suffix = text1[$ - pos .. $];
+    text1 = text1[0 .. $ - pos];
+    text2 = text2[0 .. $ - pos];
 
     // Compute the diff on the middle block.
     diffs = computeDiffs(text1, text2, checklines, deadline);
@@ -531,14 +531,14 @@ bool halfMatchI(string longtext, string shorttext, int i, out HalfMatch hm){
     string best_shorttext_a;
     string best_shorttext_b;
     while( j < cast(sizediff_t)shorttext.length && ( j = shorttext.indexOfAlt(seed, j + 1)) != -1 ){
-        auto prefixLen = commonPrefix(longtext.substr(i), shorttext.substr(j));
-        auto suffixLen = commonSuffix(longtext.substr(0, i), shorttext.substr(0, j));
+        auto prefixLen = commonPrefix(longtext[i .. $], shorttext[j .. $]);
+        auto suffixLen = commonSuffix(longtext[0 .. i], shorttext[0 .. j]);
         if( best_common.length < suffixLen + prefixLen ) {
             best_common = shorttext.substr(j - suffixLen, suffixLen) ~ shorttext.substr(j, prefixLen);
-            best_longtext_a = longtext.substr(0, i - suffixLen);
-            best_longtext_b = longtext.substr(i + prefixLen);
-            best_shorttext_a = shorttext.substr(0, j - suffixLen);
-            best_shorttext_b = shorttext.substr(j + prefixLen);      
+            best_longtext_a = longtext[0 .. i - suffixLen];
+            best_longtext_b = longtext[i + prefixLen .. $];
+            best_shorttext_a = shorttext[0 .. j - suffixLen];
+            best_shorttext_b = shorttext[j + prefixLen .. $];
         }
     }
     if( best_common.length * 2 >= longtext.length ) {
@@ -583,9 +583,9 @@ Diff[] computeDiffs(string text1, string text2, bool checklines, SysTime deadlin
     auto i = longtext.indexOf(shorttext);
     if( i != -1 ){
         Operation op = (text1.length > text2.length) ? Operation.DELETE : Operation.INSERT;
-        diffs ~= Diff(op, longtext.substr(0, i));
+        diffs ~= Diff(op, longtext[0 .. i]);
         diffs ~= Diff(Operation.EQUAL, shorttext);
-        diffs ~= Diff(op, longtext.substr(i + shorttext.length));
+        diffs ~= Diff(op, longtext[i + shorttext.length .. $]);
         return diffs;
     }
 
@@ -761,10 +761,10 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
 
 Diff[] bisectSplit(string text1, string text2, int x, int y, SysTime deadline)
 {
-    auto text1a = text1.substr(0, x);
-    auto text2a = text2.substr(0, y);
-    auto text1b = text1.substr(x);
-    auto text2b = text2.substr(y);
+    auto text1a = text1[0 .. x];
+    auto text2a = text2[0 .. y];
+    auto text1b = text1[x .. $];
+    auto text2b = text2[y .. $];
 
     Diff[] diffs = diff_main(text1a, text2a, false, deadline);
     Diff[] diffsb = diff_main(text1b, text2b, false, deadline);
@@ -840,20 +840,20 @@ void cleanupSemantic(ref Diff[] diffs)
                     overlap_len1 >= insertion.length / 2.0) {
                     //Overlap found.
                     //Insert an equality and trim the surrounding edits.
-                    diffs.insert(pointer, [Diff(Operation.EQUAL, insertion.substr(0, overlap_len1))]);
-                    diffs[pointer - 1].text = deletion.substr(0, deletion.length - overlap_len1);
-                    diffs[pointer + 1].text = insertion.substr(0, deletion.length - overlap_len1);
+                    diffs.insert(pointer, [Diff(Operation.EQUAL, insertion[0 .. overlap_len1])]);
+                    diffs[pointer - 1].text = deletion[0 .. $ - overlap_len1];
+                    diffs[pointer + 1].text = insertion[0 .. $ - overlap_len1];
                     pointer++;
                 }
             } else {
                 if( overlap_len2 > deletion.length / 2.0 ||
                     overlap_len2 > insertion.length / 2.0) {
-                    diffs.insert(pointer, [Diff(Operation.EQUAL, deletion.substr(0, overlap_len2))]);
+                    diffs.insert(pointer, [Diff(Operation.EQUAL, deletion[0 .. overlap_len2])]);
 
                     diffs[pointer - 1].operation = Operation.INSERT;
-                    diffs[pointer - 1].text = insertion.substr(0, insertion.length - overlap_len2);
+                    diffs[pointer - 1].text = insertion[0 .. $ - overlap_len2];
                     diffs[pointer + 1].operation = Operation.DELETE;
-                    diffs[pointer + 1].text = deletion.substr(overlap_len2);
+                    diffs[pointer + 1].text = deletion[overlap_len2 .. $];
                     pointer++;
                 }
             }
@@ -884,9 +884,9 @@ void cleanupSemanticLossless(ref Diff[] diffs)
             // First, shift the edit as far left as possible
             auto commonOffset = commonSuffix(equality1, edit);
             if( commonOffset > 0 ){
-                auto commonString = edit.substr(edit.length - commonOffset);
-                equality1 = equality1.substr(0, equality1.length - commonOffset);
-                edit = commonString ~ edit.substr(0, edit.length - commonOffset);
+                auto commonString = edit[edit.length - commonOffset .. $];
+                equality1 = equality1[0 .. $ - commonOffset];
+                edit = commonString ~ edit[0 .. $ - commonOffset];
                 equality2 = commonString ~ equality2;
             }
 
@@ -898,8 +898,8 @@ void cleanupSemanticLossless(ref Diff[] diffs)
             auto best_score = cleanupSemanticScore(equality1, edit) + cleanupSemanticScore(edit, equality2);
             while( edit.length != 0 && equality2.length != 0 && edit[0] == equality2[0]){
                 equality1 ~= edit[0];
-                edit =  edit.substr(1) ~ equality2[0];
-                equality2 = equality2.substr(1);
+                edit =  edit[1 .. $] ~ equality2[0];
+                equality2 = equality2[1 .. $];
                 auto score = cleanupSemanticScore(equality1, edit) + cleanupSemanticScore(edit, equality2);
                 // The >= encourages trailing rather than leading whitespace on
                 // edits.
@@ -971,20 +971,20 @@ void cleanupMerge(ref Diff[] diffs) {
                                 diffs[pointer - count_delete - count_insert - 1].operation
                                     == Operation.EQUAL) {
                                 diffs[pointer - count_delete - count_insert - 1].text
-                                    ~= text_insert.substr(0, commonlength);
+                                    ~= text_insert[0 .. commonlength];
                             } else {
-                                diffs.insert(0, [Diff(Operation.EQUAL, text_insert.substr(0, commonlength))]);
+                                diffs.insert(0, [Diff(Operation.EQUAL, text_insert[0 .. commonlength])]);
                                 pointer++;
                             }
-                            text_insert = text_insert.substr(commonlength);
-                            text_delete = text_delete.substr(commonlength);
+                            text_insert = text_insert[commonlength .. $];
+                            text_delete = text_delete[commonlength .. $];
                         }
                         // Factor out any common suffixies.
                         commonlength = commonSuffix(text_insert, text_delete);
-                        if (commonlength != 0) {                        
-                            diffs[pointer].text = text_insert.substr(text_insert.length - commonlength) ~ diffs[pointer].text;
-                            text_insert = text_insert.substr(0, text_insert.length - commonlength);
-                            text_delete = text_delete.substr(0, text_delete.length - commonlength);
+                        if (commonlength != 0) {
+                            diffs[pointer].text = text_insert[text_insert.length - commonlength .. $] ~ diffs[pointer].text;
+                            text_insert = text_insert[0 .. text_insert.length - commonlength];
+                            text_delete = text_delete[0 .. text_delete.length - commonlength];
                         }
                     }
                     // Delete the offending records and add the merged ones.
@@ -1021,14 +1021,14 @@ void cleanupMerge(ref Diff[] diffs) {
         if( diffs[pointer - 1].operation == Operation.EQUAL && 
             diffs[pointer + 1].operation == Operation.EQUAL) {
             if( diffs[pointer].text.endsWith(diffs[pointer - 1].text)) {
-                diffs[pointer].text = diffs[pointer - 1].text ~ diffs[pointer].text.substr(0, diffs[pointer].text.length - diffs[pointer - 1].text.length);
+                diffs[pointer].text = diffs[pointer - 1].text ~ diffs[pointer].text[0 .. diffs[pointer].text.length - diffs[pointer - 1].text.length];
                 diffs[pointer + 1].text = diffs[pointer - 1].text ~ diffs[pointer + 1].text;
                 diffs.splice(pointer - 1, 1);
                 changes = true;
             } else if( diffs[pointer].text.startsWith(diffs[pointer + 1].text)) {
                 diffs[pointer - 1].text ~= diffs[pointer + 1].text;
-                diffs[pointer].text = 
-                    diffs[pointer].text.substr(diffs[pointer + 1].text.length)
+                diffs[pointer].text =
+                    diffs[pointer].text[diffs[pointer + 1].text.length .. $]
                     ~ diffs[pointer + 1].text;
                 diffs.splice(pointer + 1, 1);
                 changes = true;
