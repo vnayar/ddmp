@@ -26,6 +26,12 @@ import std.string:indexOf;
 
 string substr(string str, int start, int len=-1) {
     auto end = len < 0 ? str.length : start + len;
+    if (start >= str.length) {
+        return "";
+    }
+    if (end > str.length) {
+        end = str.length;
+    }
     return str[start..end];
 }
 
