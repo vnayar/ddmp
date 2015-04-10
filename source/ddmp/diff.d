@@ -223,14 +223,14 @@ struct LinesToCharsResult {
 LinesToCharsResult linesToChars(string text1, string text2) 
 {
     LinesToCharsResult res;
-    int[string] lineHash;
+    long[string] lineHash;
     res.uniqueStrings ~= "";
     res.text1 = linesToCharsMunge(text1, res.uniqueStrings, lineHash);
     res.text2 = linesToCharsMunge(text2, res.uniqueStrings, lineHash);
     return res;
 }
 
-string linesToCharsMunge(string text, ref string[] lines, ref int[string] linehash)
+string linesToCharsMunge(string text, ref string[] lines, ref long[string] linehash)
 {
     sizediff_t lineStart = 0;
     sizediff_t lineEnd = -1;
@@ -265,7 +265,7 @@ void charsToLines(ref Diff[] diffs, string[] lineArray)
     }
 }
 
-int commonPrefix(string text1, string text2)
+long commonPrefix(string text1, string text2)
 {
     auto n = min(text1.length, text2.length);
     for( auto i = 0; i < n; ++i ){
@@ -274,7 +274,7 @@ int commonPrefix(string text1, string text2)
     return n;
 }
 
-int commonSuffix(string text1, string text2)
+long commonSuffix(string text1, string text2)
 {
     auto len1 = text1.length;
     auto len2 = text2.length;
@@ -293,10 +293,10 @@ int commonSuffix(string text1, string text2)
 * @return The number of characters common to the end of the first
 *     string and the start of the second string.
 */
-int commonOverlap(string text1, string text2) {
+long commonOverlap(string text1, string text2) {
     // Cache the text lengths to prevent multiple calls.
-    int text1_length = text1.length; 
-    int text2_length = text2.length;
+    auto text1_length = text1.length;
+    auto text2_length = text2.length;
     // Eliminate the null case.
     if (text1_length == 0 || text2_length == 0) return 0;
 
@@ -306,7 +306,7 @@ int commonOverlap(string text1, string text2) {
     } else if (text1_length < text2_length) {
         text2 = text2[0 .. text1_length];
     }
-    int text_length = min(text1_length, text2_length);
+    auto text_length = min(text1_length, text2_length);
     // Quick check for the worst case.
     if (text1 == text2) {
         return text_length;
@@ -319,7 +319,7 @@ int commonOverlap(string text1, string text2) {
     int length = 1;
     while (true) {
         string pattern = text1[text_length - length .. $];
-        int found = text2.indexOf(pattern);
+        auto found = text2.indexOf(pattern);
         if (found == -1) {
             return best;
         }
@@ -522,7 +522,7 @@ bool halfMatch(string text1, string text2, out HalfMatch halfmatch){
 }
 
 
-bool halfMatchI(string longtext, string shorttext, int i, out HalfMatch hm){
+bool halfMatchI(string longtext, string shorttext, long i, out HalfMatch hm){
     auto seed = longtext.substr(i, longtext.length / 4);
     sizediff_t j = -1;
     string best_common;
@@ -666,18 +666,18 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
 {
     auto text1_len = text1.length;
     auto text2_len = text2.length;
-    int max_d = (text1_len + text2_len + 1) / 2;
-    int v_offset = max_d;
-    int v_len = 2 * max_d;
-    int[] v1;
-    int[] v2;
+    auto max_d = (text1_len + text2_len + 1) / 2;
+    auto v_offset = max_d;
+    auto v_len = 2 * max_d;
+    long[] v1;
+    long[] v2;
     for( auto x = 0; x < v_len; x++ ){
         v1 ~= -1;
         v2 ~= -1;
     }
     v1[v_offset + 1] = 0;
     v2[v_offset + 1] = 0;
-    int delta = text1_len - text2_len;
+    auto delta = text1_len - text2_len;
     bool front = (delta % 2 != 0);
     auto k1start = 0;
     auto k1end = 0;
@@ -689,9 +689,9 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
             break;
         }
 
-        for( int k1 = -d + k1start; k1 <= d - k1end; k1 += 2 ){
+        for( auto k1 = -d + k1start; k1 <= d - k1end; k1 += 2 ){
             auto k1_offset = v_offset + k1;
-            int x1;
+            long x1;
             if( k1 == -d || k1 != d && v1[k1_offset - 1] < v1[k1_offset + 1] ) {
                 x1 = v1[k1_offset + 1];
             } else {
@@ -717,7 +717,7 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
         }
         for( auto k2 = -d + k2start; k2 <= d - k2end; k2 += 2) {
             auto k2_offset = v_offset + k2;
-            int x2;
+            long x2;
             if (k2 == -d || k2 != d && v2[k2_offset - 1] < v2[k2_offset + 1]) {
                 x2 = v2[k2_offset + 1];
             } else {
@@ -759,7 +759,7 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
 }
 
 
-Diff[] bisectSplit(string text1, string text2, int x, int y, SysTime deadline)
+Diff[] bisectSplit(string text1, string text2, long x, long y, SysTime deadline)
 {
     auto text1a = text1[0 .. x];
     auto text2a = text2[0 .. y];
@@ -947,7 +947,7 @@ void cleanupMerge(ref Diff[] diffs) {
     auto count_insert = 0;
     string text_delete;
     string text_insert;
-    auto commonlength = 0;
+    long commonlength = 0;
     while(pointer < diffs.length) {
         final switch(diffs[pointer].operation){
             case Operation.INSERT:
