@@ -302,9 +302,9 @@ int commonOverlap(string text1, string text2) {
 
     // Truncate the longer string.
     if (text1_length > text2_length) {
-        text1 = text1.substr(text1_length - text2_length);
+        text1 = text1[$ - text2_length .. $];
     } else if (text1_length < text2_length) {
-        text2 = text2.substr(0, text1_length);
+        text2 = text2[0 .. text1_length];
     }
     int text_length = min(text1_length, text2_length);
     // Quick check for the worst case.
