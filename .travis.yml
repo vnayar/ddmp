@@ -1,2 +1,6 @@
 language: d
 sudo: false
+
+script:
+  - dub test --compiler=${DC}
+  - dub run --root=test --compiler=${DC}
