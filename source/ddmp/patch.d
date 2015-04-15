@@ -94,7 +94,7 @@ struct Patch {
  * @param patch The patch to grow.
  * @param text Source text.
  */
-void addContext(Patch patch, string text)
+void addContext(ref Patch patch, string text)
 {
 	if( text.length == 0 ) return;
 
@@ -528,31 +528,31 @@ public Patch[] patch_fromText(string textline)
 		auto m = matchFirst(text[textPointer], patchHeader);
 		enforce (m, "Invalid patch string: " ~ text[textPointer]);
 		Patch patch;
-		patch.start1 = m[0].to!sizediff_t;
-		if (m[1].length == 0) {
+		patch.start1 = m[1].to!sizediff_t;
+		if (m[2].length == 0) {
 			patch.start1--;
 			patch.length1 = 1;
-		} else if (m[1] == "0") {
+		} else if (m[2] == "0") {
 			patch.length1 = 0;
 		} else {
 			patch.start1--;
-			patch.length1 = m[1].to!sizediff_t;
+			patch.length1 = m[2].to!sizediff_t;
 		}
 
-		patch.start2 = m[2].to!sizediff_t;
-		if (m[3].length == 0) {
+		patch.start2 = m[3].to!sizediff_t;
+		if (m[4].length == 0) {
 			patch.start2--;
 			patch.length2 = 1;
-		} else if (m[3] == "0") {
+		} else if (m[4] == "0") {
 			patch.length2 = 0;
 		} else {
 			patch.start2--;
-			patch.length2 = m[3].to!sizediff_t;
+			patch.length2 = m[4].to!sizediff_t;
 		}
 		textPointer++;
 
 		while (textPointer < text.length) {
-			import std.uri : decode;
+			import std.uri : decodeComponent;
 			if (textPointer >= text.length || !text[textPointer].length) {
 				// Blank line?  Whatever.
 				textPointer++;
@@ -561,7 +561,7 @@ public Patch[] patch_fromText(string textline)
 			sign = text[textPointer][0];
 			line = text[textPointer][1 .. $];
 			line = line.replace("+", "%2b");
-			line = decode(line);
+			line = decodeComponent(line);
 			if (sign == '-') {
 				// Deletion.
 				patch.diffs ~= Diff(Operation.DELETE, line);
