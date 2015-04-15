@@ -42,6 +42,8 @@ struct Patch {
 
     string toString()
     const {
+    	import std.uri : encode;
+
         auto app = appender!string();
         app.put("@@ -");
         if( length1 == 0 ){
@@ -78,13 +80,11 @@ struct Patch {
                     app.put(" ");
                     break;
             }
-            //TODO: urlEncode
-            app.put(d.text);
+            app.put(encode(d.text).replace("%20", " "));
             app.put("\n");
         }
 
-        //TODO: unescapeForEncodeUriCompatability
-        return app.data();
+        return unescapeForEncodeUriCompatability(app.data());
     }
 }
 
