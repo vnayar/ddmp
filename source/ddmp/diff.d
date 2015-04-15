@@ -265,24 +265,21 @@ void charsToLines(ref Diff[] diffs, string[] lineArray)
     }
 }
 
-sizediff_t commonPrefix(string text1, string text2)
+size_t commonPrefix(string text1, string text2)
 {
     auto n = min(text1.length, text2.length);
-    for( auto i = 0; i < n; ++i ){
-        if( text1[i] != text2[i] ) return i;
-    }
+    foreach (i; 0 .. n)
+        if (text1[i] != text2[i])
+            return i;
     return n;
 }
 
-sizediff_t commonSuffix(string text1, string text2)
+size_t commonSuffix(string text1, string text2)
 {
-    auto len1 = text1.length;
-    auto len2 = text2.length;
-    auto n = min(len1, len2);
-    
-    for( auto i = 1; i <= n; i++ ){
-        if( text1[len1 - i] != text2[len2 - i] ) return i - 1;
-    }
+    auto n = min(text1.length, text2.length);
+    foreach (i; 1 .. n+1)
+        if (text1[$-i] != text2[$-i])
+            return i-1;
     return n;
 }
 
@@ -293,7 +290,7 @@ sizediff_t commonSuffix(string text1, string text2)
 * @return The number of characters common to the end of the first
 *     string and the start of the second string.
 */
-sizediff_t commonOverlap(string text1, string text2) {
+size_t commonOverlap(string text1, string text2) {
     // Cache the text lengths to prevent multiple calls.
     auto text1_length = text1.length;
     auto text2_length = text2.length;
@@ -774,15 +771,15 @@ Diff[] bisectSplit(string text1, string text2, sizediff_t x, sizediff_t y, SysTi
 
 void cleanupSemantic(ref Diff[] diffs) 
 {
-    auto changes = false;
-    int[] equalities;
+    bool changes = false;
+    size_t[] equalities;
 
     string last_equality = null;
-    auto pointer = 0;
-    auto length_insertions1 = 0;
-    auto length_deletions1 = 0;
-    auto length_insertions2 = 0;
-    auto length_deletions2 = 0;
+    size_t pointer = 0;
+    size_t length_insertions1 = 0;
+    size_t length_deletions1 = 0;
+    size_t length_insertions2 = 0;
+    size_t length_deletions2 = 0;
 
     while( pointer < diffs.length) {
         if( diffs[pointer].operation == Operation.EQUAL ){
@@ -799,18 +796,22 @@ void cleanupSemantic(ref Diff[] diffs)
                 length_deletions2 += diffs[pointer].text.length;
             }
 
-            if( last_equality != null && 
+            if( last_equality !is null && 
                 (last_equality.length <= max(length_insertions1, length_deletions1))
-                && (last_equality.length <= max(length_insertions2, length_deletions2))) {
+                && (last_equality.length <= max(length_insertions2, length_deletions2)))
+            {
                 // Duplicate record.
                 diffs.insert(equalities[$-1], [Diff(Operation.DELETE, last_equality)]);
                 diffs[equalities[$-1]+1] = Diff(Operation.INSERT, diffs[equalities[$-1]+1].text);
 
-                //Correct to pop twice ??????
-                equalities = equalities[0..$-1]; 
-                if( equalities.length > 0 ){
-                    equalities = equalities[0..$-1]; 
+                // Throw away the equality we just deleted.
+                equalities.length--;
+                if (equalities.length > 0) {
+                    // Throw away the previous equality (it needs to be reevaluated).
+                    equalities.length--;
                 }
+                equalities.assumeSafeAppend();
+
                 pointer = equalities.length > 0 ? equalities[$-1] : -1;
                 length_insertions1 = 0;
                 length_deletions1 = 0;
@@ -827,6 +828,14 @@ void cleanupSemantic(ref Diff[] diffs)
         cleanupMerge(diffs);
     }
     cleanupSemanticLossless(diffs);
+
+    // Find any overlaps between deletions and insertions.
+    // e.g: <del>abcxxx</del><ins>xxxdef</ins>
+    //   -> <del>abc</del>xxx<ins>def</ins>
+    // e.g: <del>xxxabc</del><ins>defxxx</ins>
+    //   -> <ins>def</ins>xxx<del>abc</del>
+    // Only extract an overlap if it is as big as the edit ahead or behind it.
+
     pointer = 1;
     while( pointer < diffs.length ){
         if( diffs[pointer - 1].operation == Operation.DELETE &&
@@ -836,18 +845,18 @@ void cleanupSemantic(ref Diff[] diffs)
             auto overlap_len1 = commonOverlap(deletion, insertion);
             auto overlap_len2 = commonOverlap(insertion, deletion);
             if( overlap_len1 >= overlap_len2 ){
-                if( overlap_len1 >= deletion.length / 2.0 || 
-                    overlap_len1 >= insertion.length / 2.0) {
+                if( overlap_len1 * 2 >= deletion.length || 
+                    overlap_len1 * 2 >= insertion.length) {
                     //Overlap found.
                     //Insert an equality and trim the surrounding edits.
                     diffs.insert(pointer, [Diff(Operation.EQUAL, insertion[0 .. overlap_len1])]);
                     diffs[pointer - 1].text = deletion[0 .. $ - overlap_len1];
-                    diffs[pointer + 1].text = insertion[0 .. $ - overlap_len1];
+                    diffs[pointer + 1].text = insertion[overlap_len1 .. $];
                     pointer++;
                 }
             } else {
-                if( overlap_len2 > deletion.length / 2.0 ||
-                    overlap_len2 > insertion.length / 2.0) {
+                if( overlap_len2 * 2 >= deletion.length ||
+                    overlap_len2 * 2 >= insertion.length) {
                     diffs.insert(pointer, [Diff(Operation.EQUAL, deletion[0 .. overlap_len2])]);
 
                     diffs[pointer - 1].operation = Operation.INSERT;
@@ -884,7 +893,7 @@ void cleanupSemanticLossless(ref Diff[] diffs)
             // First, shift the edit as far left as possible
             auto commonOffset = commonSuffix(equality1, edit);
             if( commonOffset > 0 ){
-                auto commonString = edit[edit.length - commonOffset .. $];
+                auto commonString = edit[$ - commonOffset .. $];
                 equality1 = equality1[0 .. $ - commonOffset];
                 edit = commonString ~ edit[0 .. $ - commonOffset];
                 equality2 = commonString ~ equality2;
@@ -942,12 +951,11 @@ void cleanupSemanticLossless(ref Diff[] diffs)
  */
 void cleanupMerge(ref Diff[] diffs) {
     diffs ~= Diff(Operation.EQUAL, "");
-    auto pointer = 0;
-    auto count_delete = 0;
-    auto count_insert = 0;
+    size_t pointer = 0;
+    size_t count_delete = 0;
+    size_t count_insert = 0;
     string text_delete;
     string text_insert;
-    sizediff_t commonlength = 0;
     while(pointer < diffs.length) {
         final switch(diffs[pointer].operation){
             case Operation.INSERT:
@@ -965,11 +973,11 @@ void cleanupMerge(ref Diff[] diffs) {
                 if (count_delete + count_insert > 1) {
                     if (count_delete != 0 && count_insert != 0) {
                         // Factor out any common prefixies.
-                        commonlength = commonPrefix(text_insert, text_delete);
-                        if (commonlength != 0) {
-                            if ((pointer - count_delete - count_insert) > 0 &&
+                        if (auto commonlength = commonPrefix(text_insert, text_delete)) {
+                            if (pointer > count_delete + count_insert &&
                                 diffs[pointer - count_delete - count_insert - 1].operation
-                                    == Operation.EQUAL) {
+                                    == Operation.EQUAL)
+                            {
                                 diffs[pointer - count_delete - count_insert - 1].text
                                     ~= text_insert[0 .. commonlength];
                             } else {
@@ -980,11 +988,10 @@ void cleanupMerge(ref Diff[] diffs) {
                             text_delete = text_delete[commonlength .. $];
                         }
                         // Factor out any common suffixies.
-                        commonlength = commonSuffix(text_insert, text_delete);
-                        if (commonlength != 0) {
-                            diffs[pointer].text = text_insert[text_insert.length - commonlength .. $] ~ diffs[pointer].text;
-                            text_insert = text_insert[0 .. text_insert.length - commonlength];
-                            text_delete = text_delete[0 .. text_delete.length - commonlength];
+                        if (auto commonlength = commonSuffix(text_insert, text_delete)) {
+                            diffs[pointer].text = text_insert[$ - commonlength .. $] ~ diffs[pointer].text;
+                            text_insert = text_insert[0 .. $ - commonlength];
+                            text_delete = text_delete[0 .. $ - commonlength];
                         }
                     }
                     // Delete the offending records and add the merged ones.
@@ -1012,16 +1019,17 @@ void cleanupMerge(ref Diff[] diffs) {
         }
     }
     if( diffs[$-1].text.length == 0){
-        diffs.remove(diffs.length - 1);
+        diffs.length--;
     }
     
     bool changes = false;
     pointer = 1;
-    while( pointer < (cast(sizediff_t)diffs.length - 1) ) {
+    while( pointer + 1 < diffs.length ) {
         if( diffs[pointer - 1].operation == Operation.EQUAL && 
-            diffs[pointer + 1].operation == Operation.EQUAL) {
+            diffs[pointer + 1].operation == Operation.EQUAL)
+        {
             if( diffs[pointer].text.endsWith(diffs[pointer - 1].text)) {
-                diffs[pointer].text = diffs[pointer - 1].text ~ diffs[pointer].text[0 .. diffs[pointer].text.length - diffs[pointer - 1].text.length];
+                diffs[pointer].text = diffs[pointer - 1].text ~ diffs[pointer].text[0 .. $ - diffs[pointer - 1].text.length];
                 diffs[pointer + 1].text = diffs[pointer - 1].text ~ diffs[pointer + 1].text;
                 diffs.splice(pointer - 1, 1);
                 changes = true;
@@ -1080,11 +1088,11 @@ int cleanupSemanticScore(string one, string two)
  * equalities.
  * @param diffs List of Diff objects.
  */
-void cleanupEfficiency(Diff[] diffs) {
+void cleanupEfficiency(ref Diff[] diffs) {
     bool changes = false;
-    int[] equalities;
+    size_t[] equalities;
     string lastequality;
-    int pointer = 0;
+    size_t pointer = 0;
     auto pre_ins = false;
     auto pre_del = false;
     auto post_ins = false;
@@ -1097,7 +1105,8 @@ void cleanupEfficiency(Diff[] diffs) {
                 pre_del = post_del;
                 lastequality = diffs[pointer].text;
             } else {
-                equalities = [];
+                equalities.length = 0;
+                equalities.assumeSafeAppend;
                 lastequality = "";
             }
             post_ins = false;
@@ -1109,23 +1118,31 @@ void cleanupEfficiency(Diff[] diffs) {
                 post_ins = true;
             }
 
-            if( (lastequality.length != 0) 
-                && ((pre_ins && pre_del && post_ins && post_del)
-                || ((lastequality.length < DIFF_EDIT_COST / 2)
-                && ((pre_ins ? 1 : 0) + (pre_del ? 1 : 0) + (post_ins ? 1 : 0)
-                    + (post_del ? 1 : 0)) == 3))) {
-
-                diffs.insert(equalities[$], [Diff(Operation.DELETE, lastequality)]);
-                diffs[equalities[$] + 1].operation = Operation.INSERT;
-                equalities = equalities[0..$-1];
+            if( lastequality.length != 0
+                && (
+                    (pre_ins && pre_del && post_ins && post_del)
+                    || ((lastequality.length < DIFF_EDIT_COST / 2)
+                        && ((pre_ins ? 1 : 0) + (pre_del ? 1 : 0) + (post_ins ? 1 : 0) + (post_del ? 1 : 0)) == 3)
+                    )
+                )
+            {
+                diffs.insert(equalities[$-1], [Diff(Operation.DELETE, lastequality)]);
+                diffs[equalities[$-1] + 1].operation = Operation.INSERT;
+                equalities.length--;
+                equalities.assumeSafeAppend;
                 lastequality = "";
                 if( pre_ins && pre_del ){
-                    post_ins = false;
-                    post_ins = false;
-                    equalities = [];
+                    post_ins = true;
+                    post_del = true;
+                    equalities.length = 0;
+                    equalities.assumeSafeAppend;
                 } else {
-                    if( equalities.length > 0 ) equalities = equalities[0..$-1];
-                    pointer = equalities.length > 0 ? equalities[$] : -1;
+                    if( equalities.length > 0 ) {
+                        equalities.length--;
+                        equalities.assumeSafeAppend;
+                    }
+
+                    pointer = equalities.length > 0 ? equalities[$-1] : -1;
                     post_ins = false;
                     post_del = false;
                 }

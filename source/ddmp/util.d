@@ -24,8 +24,8 @@ module ddmp.util;
 
 import std.string:indexOf;
 
-string substr(string str, sizediff_t start, sizediff_t len=-1) {
-    auto end = len < 0 ? str.length : start + len;
+string substr(string str, size_t start, size_t len = size_t.max) {
+    auto end = len == size_t.max ? str.length : start + len;
     if (start >= str.length) {
         return "";
     }
@@ -41,11 +41,11 @@ sizediff_t indexOfAlt(string str, string search, sizediff_t offset=0) {
     return -1;
 }
 
-void insert(T)( ref T[] array, sizediff_t i, T[] stuff)
+void insert(T)( ref T[] array, size_t i, T[] stuff)
 {
     array = array[0..i] ~ stuff ~ array[i..$];
 }
-void remove(T)( ref T[] array, sizediff_t i, sizediff_t count=1)
+void remove(T)( ref T[] array, size_t i, size_t count=1)
 {
     array = array[0..i] ~ array[i+count..$];
 }
