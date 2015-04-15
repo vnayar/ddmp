@@ -65,7 +65,10 @@ sizediff_t match_main(string text, string pattern, sizediff_t loc)
  */
 sizediff_t bitap(string text, string pattern, sizediff_t loc)
 {
-	sizediff_t[char] s = initAlphabet(pattern);
+	// bits need to fit into the positive part of an int
+	assert(pattern.length <= 31);
+
+	int[char] s = initAlphabet(pattern);
 	double score_threshold = MATCH_THRESHOLD;
 	auto best_loc = text.indexOfAlt(pattern, loc);
 	if( best_loc != -1 ){
@@ -76,8 +79,6 @@ sizediff_t bitap(string text, string pattern, sizediff_t loc)
 			score_threshold = min(bitapScore(0, best_loc, loc, pattern), score_threshold);
 		}		
 	}
-
-	assert(pattern.length <= sizediff_t.sizeof*8);
 
 	sizediff_t matchmask = 1 << (pattern.length - 1);
 	best_loc = -1;
@@ -163,9 +164,9 @@ double bitapScore(sizediff_t e, sizediff_t x, sizediff_t loc, string pattern)
  * @param pattern The text to encode.
  * @return Hash of character locations.
  */
-sizediff_t[char] initAlphabet(string pattern)
+int[char] initAlphabet(string pattern)
 {
-	sizediff_t[char] s;
+	int[char] s;
 	foreach( c ; pattern ){
 		if( c !in s )s[c] = 0;
 	}
