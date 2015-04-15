@@ -403,7 +403,7 @@ void testDiffDelta() {
   assertEquals(`jumps over the lazy`, text1);
 
   auto delta = toDelta(diffs);
-  assertEquals(`=4\t-1\t+ed\t=6\t-3\t+a\t=5\t+old dog`, delta);
+  assertEquals("=4\t-1\t+ed\t=6\t-3\t+a\t=5\t+old dog", delta);
 
   // Convert delta string into a diff.
   assertEquals(diffs, fromDelta(text1, delta));
@@ -420,10 +420,10 @@ void testDiffDelta() {
   // Test deltas with special characters.
   diffs = [Diff(Operation.EQUAL, "\u0680 \x00 \t %"), Diff(Operation.DELETE, "\u0681 \x01 \n ^"), Diff(Operation.INSERT, "\u0682 \x02 \\ |")];
   text1 = diff_text1(diffs);
-  assertEquals(`\u0680 \x00 \t %\u0681 \x01 \n ^`, text1);
+  assertEquals("\u0680 \x00 \t %\u0681 \x01 \n ^", text1);
 
   delta = toDelta(diffs);
-  assertEquals(`=7\t-7\t+%DA%82 %02 %5C %7C`, delta);
+  assertEquals("=7\t-7\t+%DA%82 %02 %5C %7C", delta);
 
   // Convert delta string into a diff.
   assertEquals(diffs, fromDelta(text1, delta));
@@ -431,10 +431,10 @@ void testDiffDelta() {
   // Verify pool of unchanged characters.
   diffs = [Diff(Operation.INSERT, "A-Z a-z 0-9 - _ . ! ~ * \' ( ) ; / ? : @ & = + $ , # ")];
   auto text2 = diff_text2(diffs);
-  assertEquals(`A-Z a-z 0-9 - _ . ! ~ * \' ( ) ; / ? : @ & = + $ , # `, text2);
+  assertEquals("A-Z a-z 0-9 - _ . ! ~ * \' ( ) ; / ? : @ & = + $ , # ", text2);
 
   delta = toDelta(diffs);
-  assertEquals(`+A-Z a-z 0-9 - _ . ! ~ * \' ( ) ; / ? : @ & = + $ , # `, delta);
+  assertEquals("+A-Z a-z 0-9 - _ . ! ~ * \' ( ) ; / ? : @ & = + $ , # ", delta);
 
   // Convert delta string into a diff.
   assertEquals(diffs, fromDelta("", delta));

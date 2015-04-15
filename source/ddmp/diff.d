@@ -113,19 +113,20 @@ int levenshtein(Diff[] diffs) {
  */
 string toDelta(in Diff[] diffs)
 {
+    import std.range : walkLength;
     import std.format : formattedWrite;
     import std.uri : encode;
     auto text = appender!string;
     foreach (aDiff; diffs) {
         final switch (aDiff.operation) {
             case Operation.INSERT:
-                text.formattedWrite("+%s\t", encode(aDiff.text).replace("+", " "));
+                text.formattedWrite("+%s\t", encode(aDiff.text).replace("%20", " "));
                 break;
             case Operation.DELETE:
-                text.formattedWrite("-%s\t", aDiff.text.length);
+                text.formattedWrite("-%s\t", aDiff.text.walkLength);
                 break;
             case Operation.EQUAL:
-                text.formattedWrite("=%s\t", aDiff.text.length);
+                text.formattedWrite("=%s\t", aDiff.text.walkLength);
                 break;
         }
     }
@@ -148,11 +149,12 @@ string toDelta(in Diff[] diffs)
  */
 Diff[] fromDelta(string text1, string delta)
 {
+    import std.algorithm;
+    import std.range;
     import std.string : format;
-    import std.uri : decode;
+    import std.uri : decodeComponent;
 
     auto diffs = appender!(Diff[]);
-    sizediff_t pointer = 0;  // Cursor in text1
     foreach (token; delta.splitter("\t")) {
         if (token.length == 0) {
             // Blank tokens are ok (from a trailing \t).
@@ -165,7 +167,7 @@ Diff[] fromDelta(string text1, string delta)
             case '+':
                 // decode would change all "+" to " "
                 param = param.replace("+", "%2b");
-                param = decode(param);
+                param = decodeComponent(param);
                 //} catch (UnsupportedEncodingException e) {
                 //  // Not likely on modern system.
                 //  throw new Error("This system does not support UTF-8.", e);
@@ -187,11 +189,9 @@ Diff[] fromDelta(string text1, string delta)
                 enforce (n >= 0, "Negative number in diff_fromDelta: " ~ param);
 
                 string text;
-                enforce (pointer + n <= text1.length, 
-                    format("Delta length (%s) larger than source text length (%s).",
-                    pointer, text1.length));
-                text = text1[pointer .. pointer+n];
-                pointer += n;
+                enforce (n <= text1.walkLength, "Delta length larger than source text length.");
+                text = text1.takeExactly(n).array.to!string;
+                text1.popFrontN(n);
                 if (token[0] == '=') {
                     diffs ~= Diff(Operation.EQUAL, text);
                 } else {
@@ -204,8 +204,8 @@ Diff[] fromDelta(string text1, string delta)
                 "Invalid diff operation in diff_fromDelta: " ~ token[0]);
         }
     }
-    if (pointer != text1.length)
-        throw new Exception(format("Delta length (´%s) smaller than source text length (%s).", pointer, text1.length));
+    if (text1.length > 0)
+        throw new Exception("Delta length smaller than source text length.");
     return diffs.data;
 }
 
