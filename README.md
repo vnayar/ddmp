@@ -1,7 +1,7 @@
 DDMP - Diff-Match-Patch for D
 =============================
 
-This is direct D port of the C# version of Google's [dif-match-patch library][1].
+This is direct D port of the C# version of Google's [diff-match-patch library][1].
 
 [![Build Status](https://travis-ci.org/s-ludwig/ddmp.svg)](https://travis-ci.org/s-ludwig/ddmp)
 
