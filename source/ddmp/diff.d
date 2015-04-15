@@ -222,45 +222,43 @@ struct LinesToCharsResult {
 
 LinesToCharsResult linesToChars(string text1, string text2) 
 {
+    size_t[string] lineHash;
     LinesToCharsResult res;
-    sizediff_t[string] lineHash;
-    res.uniqueStrings ~= "";
+    res.uniqueStrings = [""];
     res.text1 = linesToCharsMunge(text1, res.uniqueStrings, lineHash);
     res.text2 = linesToCharsMunge(text2, res.uniqueStrings, lineHash);
     return res;
 }
 
-string linesToCharsMunge(string text, ref string[] lines, ref sizediff_t[string] linehash)
+string linesToCharsMunge(string text, ref string[] lines, ref size_t[string] linehash)
 {
     sizediff_t lineStart = 0;
     sizediff_t lineEnd = -1;
     string line;
     auto chars = appender!string();
-    while( lineEnd < cast(sizediff_t)text.length - 1 ){
+    while( lineEnd+1 < text.length ){
         lineEnd = text.indexOfAlt("\n", lineStart);
         if( lineEnd == -1 ) lineEnd = text.length - 1;
         line = text[lineStart..lineEnd + 1];
         lineStart = lineEnd + 1;
 
-        auto pv = line in linehash;
-        if( pv ) {
-            chars ~= cast(char)*pv;
+        if (auto pv = line in linehash) {
+            chars ~= cast(dchar)*pv;
         } else {
             lines ~= line;
             linehash[line] = lines.length - 1;
-            chars ~= cast(char)(lines.length -1);
+            chars ~= cast(dchar)(lines.length -1);
         }
     }
     return chars.data();
 }
 
-void charsToLines(ref Diff[] diffs, string[] lineArray)
+void charsToLines(Diff[] diffs, string[] lineArray)
 {
-    foreach( d ; diffs){
+    foreach (ref d; diffs) {
         auto str = appender!string();
-        for( auto y = 0; y < d.text.length; y++) {
-            str.put(lineArray[d.text[y]]);
-        }
+        foreach (dchar ch; d.text)
+            str.put(lineArray[ch]);
         d.text = str.data();
     }
 }

@@ -550,13 +550,12 @@ void testDiffMain() {
   // Overlap line-mode.
   a = "1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n";
   b = "abcdefghij\n1234567890\n1234567890\n1234567890\nabcdefghij\n1234567890\n1234567890\n1234567890\nabcdefghij\n1234567890\n1234567890\n1234567890\nabcdefghij\n";
-  //auto texts_linemode = diff_rebuildtexts(diff_main(a, b, true));
-  //auto texts_textmode = diff_rebuildtexts(diff_main(a, b, false));
-  //assertEquals(texts_textmode, texts_linemode);
-  assert(a == b, "TODO"); // ^ unittest missing
+  auto texts_linemode = diff_rebuildtexts(diff_main(a, b, true));
+  auto texts_textmode = diff_rebuildtexts(diff_main(a, b, false));
+  assertEquals(texts_textmode, texts_linemode);
 
-  // Test null inputs.
-  assertThrown(diff_main(null, null));
+  // (Don't) Test null inputs (not needed in D, because null is a valid empty string)
+  //assertThrown(diff_main(null, null));
 }
 
 
@@ -637,8 +636,8 @@ void testMatchMain() {
   // Complex match.
   assertEquals(4, match_main("I am the very model of a modern major general.", " that berry ", 5));
 
-  // Test null inputs.
-  assertThrown(match_main(null, null, 0));
+  // (Don't) test null inputs. (not needed in D because null is a valid empty string)
+  //assertThrown(match_main(null, null, 0));
 }
 
 
@@ -877,10 +876,26 @@ void testPatchApply() {
   assertEquals(PatchApplyResult("x123", [true]), results);
 }
 
-void assertEquals(T, U)(T t, U u)
+string[] diff_rebuildtexts(Diff[] diffs) {
+  string[] text = ["", ""];
+
+  foreach (myDiff; diffs) {
+    if (myDiff.operation != Operation.INSERT) {
+      text[0] ~= myDiff.text;
+    }
+    if (myDiff.operation != Operation.DELETE) {
+      text[1] ~= myDiff.text;
+    }
+  }
+  return text;
+}
+
+void assertEquals(T, U)(T t, U u, string file = __FILE__, int line = __LINE__)
 {
+  import core.exception : AssertError;
   import std.string : format;
-  assert(t == u, format("FAIL: %s == %s", t, u));
+  if (t != u)
+    throw new AssertError(format("%s does not match %s", t, u), file, line);
 }
 
 void main()
