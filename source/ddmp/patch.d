@@ -84,7 +84,7 @@ struct Patch {
             app.put("\n");
         }
 
-        return unescapeForEncodeUriCompatability(app.data());
+        return unescapeForEncodeUriCompatibility(app.data());
     }
 }
 

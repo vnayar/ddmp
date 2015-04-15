@@ -134,7 +134,7 @@ string toDelta(in Diff[] diffs)
     if (delta.length != 0) {
         // Strip off trailing tab character.
         delta = delta[0 .. $-1];
-        delta = unescapeForEncodeUriCompatability(delta);
+        delta = unescapeForEncodeUriCompatibility(delta);
     }
     return delta;
 }
@@ -1207,7 +1207,7 @@ sizediff_t xIndex(Diff[] diffs, sizediff_t loc){
  * @param str The string to escape.
  * @return The escaped string.
  */
-public static string unescapeForEncodeUriCompatability(string str)
+public static string unescapeForEncodeUriCompatibility(string str)
 {
     // FIXME: this is ridiculously inefficient
     return str.replace("%21", "!").replace("%7e", "~")
