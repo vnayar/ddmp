@@ -24,7 +24,7 @@ module ddmp.util;
 
 import std.string:indexOf;
 
-string substr(string str, long start, long len=-1) {
+string substr(string str, sizediff_t start, sizediff_t len=-1) {
     auto end = len < 0 ? str.length : start + len;
     if (start >= str.length) {
         return "";
@@ -35,22 +35,22 @@ string substr(string str, long start, long len=-1) {
     return str[start..end];
 }
 
-sizediff_t indexOfAlt(string str, string search, long offset=0) {
+sizediff_t indexOfAlt(string str, string search, sizediff_t offset=0) {
     auto index = str[offset..$].indexOf(search);
     if (index > -1 ) return index + offset;
     return -1;
 }
 
-void insert(T)( ref T[] array, long i, T[] stuff)
+void insert(T)( ref T[] array, sizediff_t i, T[] stuff)
 {
     array = array[0..i] ~ stuff ~ array[i..$];
 }
-void remove(T)( ref T[] array, long i, long count=1)
+void remove(T)( ref T[] array, sizediff_t i, sizediff_t count=1)
 {
     array = array[0..i] ~ array[i+count..$];
 }
 
-T[] splice(T)(ref T[] list, long start, long count, T[] objects=null) {
+T[] splice(T)(ref T[] list, sizediff_t start, sizediff_t count, T[] objects=null) {
     T[] deletedRange = list[start..start+count];
     list = list[0 .. start] ~ objects ~ list[start+count .. $];
     return deletedRange;

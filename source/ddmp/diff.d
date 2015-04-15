@@ -223,14 +223,14 @@ struct LinesToCharsResult {
 LinesToCharsResult linesToChars(string text1, string text2) 
 {
     LinesToCharsResult res;
-    long[string] lineHash;
+    sizediff_t[string] lineHash;
     res.uniqueStrings ~= "";
     res.text1 = linesToCharsMunge(text1, res.uniqueStrings, lineHash);
     res.text2 = linesToCharsMunge(text2, res.uniqueStrings, lineHash);
     return res;
 }
 
-string linesToCharsMunge(string text, ref string[] lines, ref long[string] linehash)
+string linesToCharsMunge(string text, ref string[] lines, ref sizediff_t[string] linehash)
 {
     sizediff_t lineStart = 0;
     sizediff_t lineEnd = -1;
@@ -265,7 +265,7 @@ void charsToLines(ref Diff[] diffs, string[] lineArray)
     }
 }
 
-long commonPrefix(string text1, string text2)
+sizediff_t commonPrefix(string text1, string text2)
 {
     auto n = min(text1.length, text2.length);
     for( auto i = 0; i < n; ++i ){
@@ -274,7 +274,7 @@ long commonPrefix(string text1, string text2)
     return n;
 }
 
-long commonSuffix(string text1, string text2)
+sizediff_t commonSuffix(string text1, string text2)
 {
     auto len1 = text1.length;
     auto len2 = text2.length;
@@ -293,7 +293,7 @@ long commonSuffix(string text1, string text2)
 * @return The number of characters common to the end of the first
 *     string and the start of the second string.
 */
-long commonOverlap(string text1, string text2) {
+sizediff_t commonOverlap(string text1, string text2) {
     // Cache the text lengths to prevent multiple calls.
     auto text1_length = text1.length;
     auto text2_length = text2.length;
@@ -522,7 +522,7 @@ bool halfMatch(string text1, string text2, out HalfMatch halfmatch){
 }
 
 
-bool halfMatchI(string longtext, string shorttext, long i, out HalfMatch hm){
+bool halfMatchI(string longtext, string shorttext, sizediff_t i, out HalfMatch hm){
     auto seed = longtext.substr(i, longtext.length / 4);
     sizediff_t j = -1;
     string best_common;
@@ -669,8 +669,8 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
     auto max_d = (text1_len + text2_len + 1) / 2;
     auto v_offset = max_d;
     auto v_len = 2 * max_d;
-    long[] v1;
-    long[] v2;
+    sizediff_t[] v1;
+    sizediff_t[] v2;
     for( auto x = 0; x < v_len; x++ ){
         v1 ~= -1;
         v2 ~= -1;
@@ -691,7 +691,7 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
 
         for( auto k1 = -d + k1start; k1 <= d - k1end; k1 += 2 ){
             auto k1_offset = v_offset + k1;
-            long x1;
+            sizediff_t x1;
             if( k1 == -d || k1 != d && v1[k1_offset - 1] < v1[k1_offset + 1] ) {
                 x1 = v1[k1_offset + 1];
             } else {
@@ -717,7 +717,7 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
         }
         for( auto k2 = -d + k2start; k2 <= d - k2end; k2 += 2) {
             auto k2_offset = v_offset + k2;
-            long x2;
+            sizediff_t x2;
             if (k2 == -d || k2 != d && v2[k2_offset - 1] < v2[k2_offset + 1]) {
                 x2 = v2[k2_offset + 1];
             } else {
@@ -759,7 +759,7 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
 }
 
 
-Diff[] bisectSplit(string text1, string text2, long x, long y, SysTime deadline)
+Diff[] bisectSplit(string text1, string text2, sizediff_t x, sizediff_t y, SysTime deadline)
 {
     auto text1a = text1[0 .. x];
     auto text2a = text2[0 .. y];
@@ -937,7 +937,7 @@ void cleanupSemanticLossless(ref Diff[] diffs)
 
 /**
  * Reorder and merge like edit sections.  Merge equalities.
- * Any edit section can move as long as it doesn't cross an equality.
+ * Any edit section can move as sizediff_t as it doesn't cross an equality.
  * @param diffs List of Diff objects.
  */
 void cleanupMerge(ref Diff[] diffs) {
@@ -947,7 +947,7 @@ void cleanupMerge(ref Diff[] diffs) {
     auto count_insert = 0;
     string text_delete;
     string text_insert;
-    long commonlength = 0;
+    sizediff_t commonlength = 0;
     while(pointer < diffs.length) {
         final switch(diffs[pointer].operation){
             case Operation.INSERT:
