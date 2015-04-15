@@ -35,10 +35,10 @@ float PATCH_DELETE_THRESHOLD = 0.5f;
 
 struct Patch {
     Diff[] diffs;
-    int start1;
-    int start2;
-    int length1;
-    int length2;
+    sizediff_t start1;
+    sizediff_t start2;
+    sizediff_t length1;
+    sizediff_t length2;
 
     string toString()
     const {
@@ -99,7 +99,7 @@ void addContext(Patch patch, string text)
 	if( text.length == 0 ) return;
 
 	auto pattern = text.substr(patch.start2, patch.length1);
-	int padding = 0;
+	sizediff_t padding = 0;
 
 	// Look for the first and last matches of pattern in text.  If two
 	// different matches are found, increase the pattern length.
@@ -262,17 +262,17 @@ Patch[] patch_make(string text1, Diff[] diffs)
  	splitMax(patches);
 
  	result.patchesApplied.length = patches.length; // init patchesApplied array
- 	int x = 0;
+ 	sizediff_t x = 0;
 	// delta keeps track of the offset between the expected and actual
 	// location of the previous patch.  If there are patches expected at
 	// positions 10 and 20, but the first patch was found at 12, delta is 2
 	// and the second patch has an effective expected position of 22.
-	int delta = 0; 	
+	sizediff_t delta = 0; 	
 	foreach( patch ; patches ){
 		auto expected_loc = patch.start2 + delta;
 		auto text1 =  diff_text1(patch.diffs);
-		int start_loc;
-		int end_loc = -1;
+		sizediff_t start_loc;
+		sizediff_t end_loc = -1;
 		if( text1.length > MATCH_MAXBITS ){
 			// patch_splitMax will only provide an oversized pattern
          	// in the case of a monster delete
@@ -351,7 +351,7 @@ string addPadding(Patch[] patches)
 {
 	auto paddingLength = PATCH_MARGIN;
 	string nullPadding;
-	for(int x = 1; x <= paddingLength; x++){
+	for(sizediff_t x = 1; x <= paddingLength; x++){
 		nullPadding ~= cast(char)x;
 	}
 
@@ -520,7 +520,7 @@ public Patch[] patch_fromText(string textline)
 	if (textline.length == 0) return null;
 
 	auto text = textline.split("\n");
-	int textPointer = 0;
+	sizediff_t textPointer = 0;
 	auto patchHeader = regex("^@@ -(\\d+),?(\\d*) \\+(\\d+),?(\\d*) @@$");
 	char sign;
 	string line;
@@ -528,7 +528,7 @@ public Patch[] patch_fromText(string textline)
 		auto m = matchFirst(text[textPointer], patchHeader);
 		enforce (m, "Invalid patch string: " ~ text[textPointer]);
 		Patch patch;
-		patch.start1 = m[0].to!int;
+		patch.start1 = m[0].to!sizediff_t;
 		if (m[1].length == 0) {
 			patch.start1--;
 			patch.length1 = 1;
@@ -536,10 +536,10 @@ public Patch[] patch_fromText(string textline)
 			patch.length1 = 0;
 		} else {
 			patch.start1--;
-			patch.length1 = m[1].to!int;
+			patch.length1 = m[1].to!sizediff_t;
 		}
 
-		patch.start2 = m[2].to!int;
+		patch.start2 = m[2].to!sizediff_t;
 		if (m[3].length == 0) {
 			patch.start2--;
 			patch.length2 = 1;
@@ -547,7 +547,7 @@ public Patch[] patch_fromText(string textline)
 			patch.length2 = 0;
 		} else {
 			patch.start2--;
-			patch.length2 = m[3].to!int;
+			patch.length2 = m[3].to!sizediff_t;
 		}
 		textPointer++;
 

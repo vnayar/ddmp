@@ -152,7 +152,7 @@ Diff[] fromDelta(string text1, string delta)
     import std.uri : decode;
 
     auto diffs = appender!(Diff[]);
-    int pointer = 0;  // Cursor in text1
+    sizediff_t pointer = 0;  // Cursor in text1
     foreach (token; delta.splitter("\t")) {
         if (token.length == 0) {
             // Blank tokens are ok (from a trailing \t).
@@ -1148,7 +1148,7 @@ void cleanupEfficiency(Diff[] diffs) {
  * @param loc Location within text1.
  * @return Location within text2.
  */
-int xIndex(Diff[] diffs, int loc){
+sizediff_t xIndex(Diff[] diffs, sizediff_t loc){
     auto chars1 = 0;
     auto chars2 = 0;
     auto last_chars1 = 0;
