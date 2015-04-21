@@ -554,6 +554,16 @@ void testDiffMain() {
   auto texts_textmode = diff_rebuildtexts(diff_main(a, b, false));
   assertEquals(texts_textmode, texts_linemode);
 
+  // Test line-mode compression running out of UTF-8 space
+  import std.conv;
+  a = "";
+  b = "";
+  foreach (x; 0 .. 500) {
+      a ~= "1234567890" ~ to!string(x) ~ "\n";
+      b ~= "abcdefghij" ~ to!string(x) ~ "\n";
+  }
+  assertEquals(diff_main(a, b, false), diff_main(a, b, true));
+
   // (Don't) Test null inputs (not needed in D, because null is a valid empty string)
   //assertThrown(diff_main(null, null));
 }
