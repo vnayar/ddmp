@@ -21,8 +21,10 @@
  * http://code.google.com/p/google-diff-match-patch/
  */
 module ddmp.patch;
+import std.algorithm : min, max;
 import std.array;
 import std.conv;
+import std.exception : enforce;
 import std.string:lastIndexOf;
 
 import ddmp.diff;
