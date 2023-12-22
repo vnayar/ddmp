@@ -30,6 +30,7 @@ import std.datetime : SysTime, Clock, UTC;
 import std.exception : enforce;
 import std.string : indexOf, endsWith, startsWith;
 import std.uni;
+import std.utf : toUTF16, toUTF8;
 import std.regex;
 import std.algorithm : min, max;
 import std.digest.sha;
@@ -45,14 +46,14 @@ int DIFF_EDIT_COST = 4;
 * @param diffs List of Diff objects.
 * @return Source text.
 */
-string diff_text1(Diff[] diffs) {
-    auto text = appender!string();
+wstring diff_text1(Diff[] diffs) {
+    auto text = appender!wstring();
     foreach ( d; diffs ) {
         if (d.operation != Operation.INSERT) {
             text.put(d.text);
         }
     }
-    return text.data();
+    return text[];
 }
 
 /**
@@ -60,14 +61,14 @@ string diff_text1(Diff[] diffs) {
 * @param diffs List of Diff objects.
 * @return Destination text.
 */
-string diff_text2(Diff[] diffs) {
-    auto text = appender!string();
+wstring diff_text2(Diff[] diffs) {
+    auto text = appender!wstring();
     foreach ( d; diffs ) {
         if (d.operation != Operation.DELETE) {
             text.put(d.text);
         }
     }
-    return text.data();
+    return text[];
 }
 
 
@@ -210,9 +211,9 @@ Diff[] fromDelta(string text1, string delta)
 }
 
 struct LinesToCharsResult {
-    string text1;
-    string text2;
-    string[] uniqueStrings;
+    wstring text1;
+    wstring text2;
+    wstring[] uniqueStrings;
     bool opEquals()(auto ref const LinesToCharsResult other) const {
         return text1 == other.text1 && 
                text2 == other.text2 &&
@@ -220,9 +221,13 @@ struct LinesToCharsResult {
     }
 }
 
-LinesToCharsResult linesToChars(string text1, string text2) 
+LinesToCharsResult linesToChars(string text1, string text2) {
+    return linesToChars(toUTF16(text1), toUTF16(text2));
+}
+
+LinesToCharsResult linesToChars(wstring text1, wstring text2) 
 {
-    size_t[string] lineHash;
+    size_t[wstring] lineHash;
     LinesToCharsResult res;
     res.uniqueStrings = [""];
     res.text1 = linesToCharsMunge(text1, res.uniqueStrings, lineHash);
@@ -230,12 +235,19 @@ LinesToCharsResult linesToChars(string text1, string text2)
     return res;
 }
 
-string linesToCharsMunge(string text, ref string[] lines, ref size_t[string] linehash)
+/**
+ * Given a block of text, decompose it into:
+ * - Unique lines of text.
+ * - A hash from lines of text to their index in the unique lines.
+ * Finally, it returns a string with each UTF-16 character representing the unique line index for
+ * each line of text in the original block of text.
+ */
+wstring linesToCharsMunge(wstring text, ref wstring[] lines, ref size_t[wstring] linehash)
 {
     sizediff_t lineStart = 0;
     sizediff_t lineEnd = -1;
-    string line;
-    auto chars = appender!string();
+    wstring line;
+    auto chars = appender!wstring();
     while( lineEnd+1 < text.length ){
         lineEnd = text.indexOfAlt("\n", lineStart);
         if( lineEnd == -1 ) lineEnd = text.length - 1;
@@ -243,27 +255,37 @@ string linesToCharsMunge(string text, ref string[] lines, ref size_t[string] lin
         lineStart = lineEnd + 1;
 
         if (auto pv = line in linehash) {
-            chars ~= cast(dchar)*pv;
+            chars ~= cast(wchar)*pv;
         } else {
             lines ~= line;
             linehash[line] = lines.length - 1;
-            chars ~= cast(dchar)(lines.length -1);
+            // Using UTF-16, only values up to 0xD7FF (55295) can be represented before
+            // encoding errors or multi-byte encodings are applied.
+            chars ~= cast(wchar)(lines.length -1);
         }
     }
-    return chars.data();
+    return chars[];
 }
 
-void charsToLines(Diff[] diffs, string[] lineArray)
+/**
+ * Reverses the process of [linesToChars] by interpretting each UTF-16 character as an index into
+ * linesArray, and assembles the indexed lines into a block of text.
+ */
+void charsToLines(Diff[] diffs, wstring[] lineArray)
 {
+    import std.stdio;
     foreach (ref d; diffs) {
-        auto str = appender!string();
-        foreach (dchar ch; d.text)
+        auto str = appender!wstring();
+        foreach (wchar ch; d.text) {
             str.put(lineArray[ch]);
-        d.text = str.data();
+        }
+        d.text = str[];
     }
 }
 
-size_t commonPrefix(string text1, string text2)
+/// The character offset should be aware of unicode, otherwise, the common prefix can end up
+/// splitting a single character's bytes.
+size_t commonPrefix(wstring text1, wstring text2)
 {
     auto n = min(text1.length, text2.length);
     foreach (i; 0 .. n)
@@ -272,7 +294,7 @@ size_t commonPrefix(string text1, string text2)
     return n;
 }
 
-size_t commonSuffix(string text1, string text2)
+size_t commonSuffix(wstring text1, wstring text2)
 {
     auto n = min(text1.length, text2.length);
     foreach (i; 1 .. n+1)
@@ -288,7 +310,7 @@ size_t commonSuffix(string text1, string text2)
 * @return The number of characters common to the end of the first
 *     string and the start of the second string.
 */
-size_t commonOverlap(string text1, string text2) {
+size_t commonOverlap(wstring text1, wstring text2) {
     // Cache the text lengths to prevent multiple calls.
     auto text1_length = text1.length;
     auto text2_length = text2.length;
@@ -313,7 +335,7 @@ size_t commonOverlap(string text1, string text2) {
     int best = 0;
     int length = 1;
     while (true) {
-        string pattern = text1[text_length - length .. $];
+        wstring pattern = text1[text_length - length .. $];
         auto found = text2.indexOf(pattern);
         if (found == -1) {
             return best;
@@ -344,9 +366,14 @@ enum Operation {
 */
 struct Diff {
     Operation operation;
-    string text;
+    wstring text;
 
     this(Operation operation, string text)
+    {
+        this(operation, toUTF16(text));
+    }
+
+    this(Operation operation, wstring text)
     {
         this.operation = operation;
         this.text = text;
@@ -364,7 +391,7 @@ struct Diff {
             case Operation.EQUAL:
                 op = "EQUAL"; break;
         }
-        return "Diff(" ~ op ~ ",\"" ~ text ~ "\")";
+        return "Diff(" ~ op ~ ",\"" ~ toUTF8(text) ~ "\")";
     }
 
     bool opEquals(const Diff other) const
@@ -383,7 +410,11 @@ struct Diff {
  * @param text2 New string to be diffed.
  * @return List of Diff objects.
  */
-Diff[] diff_main(string text1, string text2)
+Diff[] diff_main(string text1, string text2) {
+    return diff_main(toUTF16(text1), toUTF16(text2));
+}
+
+Diff[] diff_main(wstring text1, wstring text2)
 {
     return diff_main(text1, text2, true);
 }
@@ -397,7 +428,11 @@ Diff[] diff_main(string text1, string text2)
  *     If true, then run a faster slightly less optimal diff.
  * @return List of Diff objects.
  */
-Diff[] diff_main(string text1, string text2, bool checklines)
+Diff[] diff_main(string text1, string text2, bool checklines) {
+    return diff_main(toUTF16(text1), toUTF16(text2), checklines);
+}
+
+Diff[] diff_main(wstring text1, wstring text2, bool checklines)
 {
     // Set a deadline by which time the diff must be complete.
     SysTime deadline;
@@ -422,7 +457,11 @@ Diff[] diff_main(string text1, string text2, bool checklines)
  *     instead.
  * @return List of Diff objects.
  */
-Diff[] diff_main(string text1, string text2, bool checklines, SysTime deadline)
+Diff[] diff_main(string text1, string text2, bool checklines, SysTime deadline) {
+    return diff_main(toUTF16(text1), toUTF16(text2), checklines, deadline);
+}
+
+Diff[] diff_main(wstring text1, wstring text2, bool checklines, SysTime deadline)
 {
     Diff[] diffs;
     if( text1 == text2 ){
@@ -458,11 +497,11 @@ Diff[] diff_main(string text1, string text2, bool checklines, SysTime deadline)
 
 
 struct HalfMatch {
-    string prefix1;
-    string suffix1;
-    string suffix2;
-    string prefix2;
-    string commonMiddle;
+    wstring prefix1;
+    wstring suffix1;
+    wstring suffix2;
+    wstring prefix2;
+    wstring commonMiddle;
 
     bool opEquals()(auto ref const HalfMatch other) const {
         return prefix1 == other.prefix1 &&
@@ -481,13 +520,13 @@ struct HalfMatch {
  *     suffix of text1, the prefix of text2, the suffix of text2 and the
  *     common middle.  Or null if there was no match.
  */
-bool halfMatch(string text1, string text2, out HalfMatch halfmatch){
+bool halfMatch(wstring text1, wstring text2, out HalfMatch halfmatch){
     if (diffTimeout <= 0.seconds) {
         // Don't risk returning a non-optimal diff if we have unlimited time.
         return false;
     }
-    string longtext = text1.length > text2.length ? text1 : text2;
-    string shorttext = text1.length > text2.length ? text2 : text1;
+    wstring longtext = text1.length > text2.length ? text1 : text2;
+    wstring shorttext = text1.length > text2.length ? text2 : text1;
     if( longtext.length < 4 || shorttext.length * 2 < longtext.length ) return false; //pointless
     HalfMatch hm1;
     HalfMatch hm2;
@@ -517,14 +556,14 @@ bool halfMatch(string text1, string text2, out HalfMatch halfmatch){
 }
 
 
-bool halfMatchI(string longtext, string shorttext, sizediff_t i, out HalfMatch hm){
+bool halfMatchI(wstring longtext, wstring shorttext, sizediff_t i, out HalfMatch hm){
     auto seed = longtext.substr(i, longtext.length / 4);
     sizediff_t j = -1;
-    string best_common;
-    string best_longtext_a;
-    string best_longtext_b;
-    string best_shorttext_a;
-    string best_shorttext_b;
+    wstring best_common;
+    wstring best_longtext_a;
+    wstring best_longtext_b;
+    wstring best_shorttext_a;
+    wstring best_shorttext_b;
     while( j < cast(sizediff_t)shorttext.length && ( j = shorttext.indexOfAlt(seed, j + 1)) != -1 ){
         auto prefixLen = commonPrefix(longtext[i .. $], shorttext[j .. $]);
         auto suffixLen = commonSuffix(longtext[0 .. i], shorttext[0 .. j]);
@@ -550,17 +589,17 @@ bool halfMatchI(string longtext, string shorttext, sizediff_t i, out HalfMatch h
 
 
 /**
-     * Find the differences between two texts.  Assumes that the texts do not
-     * have any common prefix or suffix.
-     * @param text1 Old string to be diffed.
-     * @param text2 New string to be diffed.
-     * @param checklines Speedup flag.  If false, then don't run a
-     *     line-level diff first to identify the changed areas.
-     *     If true, then run a faster slightly less optimal diff.
-     * @param deadline Time when the diff should be complete by.
-     * @return List of Diff objects.
-     */
-Diff[] computeDiffs(string text1, string text2, bool checklines, SysTime deadline)
+ * Find the differences between two texts.  Assumes that the texts do not
+ * have any common prefix or suffix.
+ * @param text1 Old string to be diffed.
+ * @param text2 New string to be diffed.
+ * @param checklines Speedup flag.  If false, then don't run a
+ *     line-level diff first to identify the changed areas.
+ *     If true, then run a faster slightly less optimal diff.
+ * @param deadline Time when the diff should be complete by.
+ * @return List of Diff objects.
+ */
+Diff[] computeDiffs(wstring text1, wstring text2, bool checklines, SysTime deadline)
 {
     Diff[] diffs;
 
@@ -608,7 +647,11 @@ Diff[] computeDiffs(string text1, string text2, bool checklines, SysTime deadlin
     return bisect(text1, text2, deadline);
 }
 
-Diff[] diff_lineMode(string text1, string text2, SysTime deadline)
+Diff[] diff_lineMode(string text1, string text2, SysTime deadline) {
+    return diff_lineMode(toUTF16(text1), toUTF16(text2), deadline);
+}
+
+Diff[] diff_lineMode(wstring text1, wstring text2, SysTime deadline)
 {
     auto b = linesToChars(text1, text2);
 
@@ -621,8 +664,8 @@ Diff[] diff_lineMode(string text1, string text2, SysTime deadline)
     auto pointer = 0;
     auto count_delete = 0;
     auto count_insert = 0;
-    string text_delete;
-    string text_insert;
+    wstring text_delete;
+    wstring text_insert;
     while( pointer < diffs.length ){
         final switch( diffs[pointer].operation ) {
             case Operation.INSERT:
@@ -657,7 +700,11 @@ Diff[] diff_lineMode(string text1, string text2, SysTime deadline)
     return diffs;
 }
 
-Diff[] bisect(string text1, string text2, SysTime deadline)
+Diff[] bisect(string text1, string text2, SysTime deadline) {
+    return bisect(toUTF16(text1), toUTF16(text2), deadline);
+}
+
+Diff[] bisect(wstring text1, wstring text2, SysTime deadline)
 {
     auto text1_len = text1.length;
     auto text2_len = text2.length;
@@ -754,7 +801,7 @@ Diff[] bisect(string text1, string text2, SysTime deadline)
 }
 
 
-Diff[] bisectSplit(string text1, string text2, sizediff_t x, sizediff_t y, SysTime deadline)
+Diff[] bisectSplit(wstring text1, wstring text2, sizediff_t x, sizediff_t y, SysTime deadline)
 {
     auto text1a = text1[0 .. x];
     auto text2a = text2[0 .. y];
@@ -772,7 +819,7 @@ void cleanupSemantic(ref Diff[] diffs)
     bool changes = false;
     size_t[] equalities;
 
-    string last_equality = null;
+    wstring last_equality = null;
     size_t pointer = 0;
     size_t length_insertions1 = 0;
     size_t length_deletions1 = 0;
@@ -952,8 +999,8 @@ void cleanupMerge(ref Diff[] diffs) {
     size_t pointer = 0;
     size_t count_delete = 0;
     size_t count_insert = 0;
-    string text_delete;
-    string text_insert;
+    wstring text_delete;
+    wstring text_insert;
     while(pointer < diffs.length) {
         final switch(diffs[pointer].operation){
             case Operation.INSERT:
@@ -1056,27 +1103,27 @@ void cleanupMerge(ref Diff[] diffs) {
  * @param two Second string.
  * @return The score.
  */
-int cleanupSemanticScore(string one, string two) 
+int cleanupSemanticScore(wstring one, wstring two)
 {
     if( one.length == 0 || two.length == 0) return 6; //Edges are the best
     auto char1 = one[$-1];
     auto char2 = two[0];
 
-    auto nonAlphaNumeric1 = !(isAlpha(char1) || isNumber(char1));    
+    auto nonAlphaNumeric1 = !(isAlpha(char1) || isNumber(char1));
     auto nonAlphaNumeric2 = !(isAlpha(char2) || isNumber(char2));
     auto whitespace1 = nonAlphaNumeric1 && isWhite(char1);
     auto whitespace2 = nonAlphaNumeric2 && isWhite(char2);
     auto lineBreak1 = whitespace1 && isControl(char1);
     auto lineBreak2 = whitespace2 && isControl(char2);
-    auto blankLine1 = lineBreak1 &&  match(one, `\n\r?\n\Z`);
-    auto blankLine2 = lineBreak2 &&  match(two, `\A\r?\n\r?\n`);
+    auto blankLine1 = lineBreak1 &&  match(one, `\n\r?\n\Z`w);
+    auto blankLine2 = lineBreak2 &&  match(two, `\A\r?\n\r?\n`w);
 
     if (blankLine1 || blankLine2) return 5;
     else if (lineBreak1 || lineBreak2) return 4;
     else if (nonAlphaNumeric1 && !whitespace1 && whitespace2) return 3;
     else if (whitespace1 || whitespace2) return 2;
     else if (nonAlphaNumeric1 || nonAlphaNumeric2) return 1;
-    
+
     return 0;
 }
 
@@ -1089,7 +1136,7 @@ int cleanupSemanticScore(string one, string two)
 void cleanupEfficiency(ref Diff[] diffs) {
     bool changes = false;
     size_t[] equalities;
-    string lastequality;
+    wstring lastequality;
     size_t pointer = 0;
     auto pre_ins = false;
     auto pre_del = false;

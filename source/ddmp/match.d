@@ -26,11 +26,12 @@ import std.algorithm : min, max;
 import std.array;
 import std.math : abs;
 import std.string;
+import std.utf : toUTF16, toUTF8;
 
 import ddmp.util;
 
 float MATCH_THRESHOLD = 0.5f;
-int MATCH_DISTANCE = 1000; 
+int MATCH_DISTANCE = 1000;
 
 /**
  * Locate the best instance of 'pattern' in 'text' near 'loc'.
@@ -40,7 +41,11 @@ int MATCH_DISTANCE = 1000;
  * @param loc The location to search around.
  * @return Best match index or -1.
  */
-sizediff_t match_main(string text, string pattern, sizediff_t loc)
+sizediff_t match_main(string text, string pattern, sizediff_t loc) {
+  return match_main(toUTF16(text), toUTF16(pattern), loc);
+}
+
+sizediff_t match_main(wstring text, wstring pattern, sizediff_t loc)
 {
 	loc = max(0, min(loc, text.length));
 	if( text == pattern ){
@@ -63,12 +68,12 @@ sizediff_t match_main(string text, string pattern, sizediff_t loc)
  * @param loc The location to search around.
  * @return Best match index or -1.
  */
-sizediff_t bitap(string text, string pattern, sizediff_t loc)
+sizediff_t bitap(wstring text, wstring pattern, sizediff_t loc)
 {
 	// bits need to fit into the positive part of an int
 	assert(pattern.length <= 31);
 
-	int[char] s = initAlphabet(pattern);
+	int[wchar] s = initAlphabet(pattern);
 	double score_threshold = MATCH_THRESHOLD;
 	auto best_loc = text.indexOfAlt(pattern, loc);
 	if( best_loc != -1 ){
@@ -149,7 +154,7 @@ sizediff_t bitap(string text, string pattern, sizediff_t loc)
  * @param pattern Pattern being sought.
  * @return Overall score for match (0.0 = good, 1.0 = bad).
  */
-double bitapScore(sizediff_t e, sizediff_t x, sizediff_t loc, string pattern) 
+double bitapScore(sizediff_t e, sizediff_t x, sizediff_t loc, wstring pattern)
 {
 	auto accuracy = cast(float)e / pattern.length;
 	sizediff_t proximity = abs(loc - x);
@@ -164,15 +169,15 @@ double bitapScore(sizediff_t e, sizediff_t x, sizediff_t loc, string pattern)
  * @param pattern The text to encode.
  * @return Hash of character locations.
  */
-int[char] initAlphabet(string pattern)
+int[wchar] initAlphabet(wstring pattern)
 {
-	int[char] s;
+	int[wchar] s;
 	foreach( c ; pattern ){
 		if( c !in s )s[c] = 0;
 	}
 	foreach( i, c; pattern ){
 		auto value = s[c] | (1 << (pattern.length - i - 1));
-		s[c] = value; 
+		s[c] = value;
 	}
 	return s;
 }
