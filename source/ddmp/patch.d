@@ -26,6 +26,7 @@ import std.array;
 import std.conv;
 import std.exception : enforce;
 import std.string:lastIndexOf;
+import std.utf : toUTF16, toUTF8;
 
 import ddmp.diff;
 import ddmp.match;
@@ -96,7 +97,7 @@ struct Patch {
  * @param patch The patch to grow.
  * @param text Source text.
  */
-void addContext(ref Patch patch, string text)
+void addContext(ref Patch patch, wstring text)
 {
 	if( text.length == 0 ) return;
 
@@ -172,11 +173,15 @@ Patch[] patch_make(Diff[] diffs) {
  * @param diffs Array of Diff objects for text1 to text2.
  * @return List of Patch objects.
  */
-Patch[] patch_make(string text1, Diff[] diffs)
+Patch[] patch_make(string text1, Diff[] diffs) {
+  return patch_make(toUTF16(text1), diffs);
+}
+
+Patch[] patch_make(wstring text1, Diff[] diffs)
 {
 	Patch[] patches;
 	if( diffs.length == 0 ) return patches;
-	
+
 	Patch patch;
 	auto char_count1 = 0;  // Number of characters into the text1 string.
 	auto char_count2 = 0;  // Number of characters into the text2 string.
@@ -250,15 +255,15 @@ Patch[] patch_make(string text1, Diff[] diffs)
  */
 
  struct PatchApplyResult {
- 	string text;
+ 	wstring text;
  	bool[] patchesApplied;
  }
 
- PatchApplyResult apply(Patch[] patches, string text) 
+ PatchApplyResult apply(Patch[] patches, wstring text)
  {
  	PatchApplyResult result;
  	if( patches.length == 0 ) return result;
- 
+
  	auto nullPadding = addPadding(patches);
  	text = nullPadding ~ text ~ nullPadding;
  	splitMax(patches);
@@ -269,7 +274,7 @@ Patch[] patch_make(string text1, Diff[] diffs)
 	// location of the previous patch.  If there are patches expected at
 	// positions 10 and 20, but the first patch was found at 12, delta is 2
 	// and the second patch has an effective expected position of 22.
-	sizediff_t delta = 0; 	
+	sizediff_t delta = 0;
 	foreach( patch ; patches ){
 		auto expected_loc = patch.start2 + delta;
 		auto text1 =  diff_text1(patch.diffs);
@@ -300,7 +305,7 @@ Patch[] patch_make(string text1, Diff[] diffs)
 			// Found a match. :)
 			result.patchesApplied[x] = true;
 			delta = start_loc - expected_loc;
-			string text2;
+			wstring text2;
 			if( end_loc == -1 ){
 				text2 = text[ start_loc .. min(start_loc + text1.length, text.length) ];
 			} else {
@@ -349,10 +354,10 @@ Patch[] patch_make(string text1, Diff[] diffs)
  * @param patches Array of Patch objects.
  * @return The padding string added to each side.
  */
-string addPadding(Patch[] patches)
+wstring addPadding(Patch[] patches)
 {
 	auto paddingLength = PATCH_MARGIN;
-	string nullPadding;
+	wstring nullPadding;
 	for(sizediff_t x = 1; x <= paddingLength; x++){
 		nullPadding ~= cast(char)x;
 	}
@@ -366,7 +371,7 @@ string addPadding(Patch[] patches)
 	// Add some padding on start of first diff.
 	Patch patch = patches[0];
 	auto diffs = patch.diffs;
-	if( diffs.length == 0 || diffs[0].operation != Operation.EQUAL ){		
+	if( diffs.length == 0 || diffs[0].operation != Operation.EQUAL ){
 		// Add nullPadding equality.
 		diffs.insert(0, [Diff(Operation.EQUAL, nullPadding)]);
 		patch.start1 -= paddingLength;  // Should be 0.
@@ -418,12 +423,12 @@ void splitMax(Patch[] patches)
 		patches.splice(x--, 1);
 		auto start1 = bigpatch.start1;
 		auto start2 = bigpatch.start2;
-		string precontext;
+		wstring precontext;
 		while( bigpatch.diffs.length != 0){
 			Patch patch;
 			bool empty = true;
 			patch.start1 = start1 - precontext.length;
-			patch.start2 = start2 - precontext.length;			
+			patch.start2 = start2 - precontext.length;
 			if( precontext.length != 0 ){
 				patch.length1 = patch.length2 = precontext.length;
 				patch.diffs ~= Diff(Operation.EQUAL, precontext);
