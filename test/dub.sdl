@@ -1,0 +1,3 @@
+name "ddmp-test"
+description "Test library for DDMP."
+dependency "ddmp" path=".."

@@ -1,0 +1,33 @@
+name: CI
+
+# Only triggers on pushes/PRs to master
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+jobs:
+  test:
+    name: Unittests
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        dc: [dmd-latest, ldc-latest]
+
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install D compiler
+        uses: dlang-community/setup-dlang@v1
+        with:
+            compiler: ${{matrix.dc}}
+
+      - name: Run tests
+        shell: bash
+        run: ./test.sh
