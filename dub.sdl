@@ -1,0 +1,6 @@
+name "ddmp"
+description "D port of the diff-match-patch library"
+homepage "https://code.google.com/p/google-diff-match-patch/"
+authors "Neil Fraser" "Matthaeus G. Chajdas" "Jan Krüger"
+copyright "Copyright © 2008 Google Inc. All Rights Reserved. Copyright 2013-2014 Jan Krüger. All Rights Reserved."
+license "Apache-2.0"
