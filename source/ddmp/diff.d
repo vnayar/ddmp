@@ -31,23 +31,26 @@ import std.exception : enforce;
 import std.string : indexOf, endsWith, startsWith;
 import std.uni;
 import std.utf : toUTF16, toUTF8;
+import std.range : ElementEncodingType;
 import std.regex;
 import std.algorithm : min, max;
 import std.digest.sha;
+import std.traits : isSomeString;
 import core.time;
 
 
 Duration diffTimeout = 1.seconds;
 int DIFF_EDIT_COST = 4;
 
+alias Diff = DiffT!string;
 
 /**
 * Compute and return the source text (all equalities and deletions).
-* @param diffs List of Diff objects.
+* @param diffs List of DiffT objects.
 * @return Source text.
 */
-wstring diff_text1(Diff[] diffs) {
-    auto text = appender!wstring();
+Str diff_text1(Str)(DiffT!(Str)[] diffs) {
+    auto text = appender!Str();
     foreach ( d; diffs ) {
         if (d.operation != Operation.INSERT) {
             text.put(d.text);
@@ -58,11 +61,11 @@ wstring diff_text1(Diff[] diffs) {
 
 /**
 * Compute and return the destination text (all equalities and insertions).
-* @param diffs List of Diff objects.
+* @param diffs List of DiffT objects.
 * @return Destination text.
 */
-wstring diff_text2(Diff[] diffs) {
-    auto text = appender!wstring();
+Str diff_text2(Str)(DiffT!(Str)[] diffs) {
+    auto text = appender!Str();
     foreach ( d; diffs ) {
         if (d.operation != Operation.DELETE) {
             text.put(d.text);
@@ -75,10 +78,10 @@ wstring diff_text2(Diff[] diffs) {
 /**
  * Compute the Levenshtein distance; the number of inserted, deleted or
  * substituted characters.
- * @param diffs List of Diff objects.
+ * @param diffs List of DiffT objects.
  * @return Number of changes.
  */
-int levenshtein(Diff[] diffs) {
+int levenshtein(Str)(DiffT!(Str)[] diffs) {
     int levenshtein = 0;
     int insertions = 0;
     int deletions = 0;
@@ -109,25 +112,25 @@ int levenshtein(Diff[] diffs) {
  * E.g. =3\t-2\t+ing  -> Keep 3 chars, delete 2 chars, insert 'ing'.
  * Operations are tab-separated.  Inserted text is escaped using %xx
  * notation.
- * @param diffs Array of Diff objects.
+ * @param diffs Array of DiffT objects.
  * @return Delta text.
  */
-string toDelta(in Diff[] diffs)
+Str toDelta(Str)(in DiffT!(Str)[] diffs)
 {
     import std.range : walkLength;
     import std.format : formattedWrite;
     import std.uri : encode;
     auto text = appender!string;
-    foreach (aDiff; diffs) {
-        final switch (aDiff.operation) {
+    foreach (aDiffT; diffs) {
+        final switch (aDiffT.operation) {
             case Operation.INSERT:
-                text.formattedWrite("+%s\t", encode(aDiff.text).replace("%20", " "));
+                text.formattedWrite("+%s\t", encode(aDiffT.text).replace("%20", " "));
                 break;
             case Operation.DELETE:
-                text.formattedWrite("-%s\t", aDiff.text.walkLength);
+                text.formattedWrite("-%s\t", aDiffT.text.walkLength);
                 break;
             case Operation.EQUAL:
-                text.formattedWrite("=%s\t", aDiff.text.walkLength);
+                text.formattedWrite("=%s\t", aDiffT.text.walkLength);
                 break;
         }
     }
@@ -145,29 +148,29 @@ string toDelta(in Diff[] diffs)
  * operations required to transform text1 into text2, comAdde the full diff.
  * @param text1 Source string for the diff.
  * @param delta Delta text.
- * @return Array of Diff objects or null if invalid.
+ * @return Array of DiffT objects or null if invalid.
  * @throws ArgumentException If invalid input.
  */
-Diff[] fromDelta(string text1, string delta)
+DiffT!(Str)[] fromDelta(Str)(Str text1, Str delta)
 {
     import std.algorithm;
     import std.range;
     import std.string : format;
     import std.uri : decodeComponent;
 
-    auto diffs = appender!(Diff[]);
-    foreach (token; delta.splitter("\t")) {
+    auto diffs = appender!(DiffT!(Str)[]);
+    foreach (token; delta.splitter("\t".to!Str)) {
         if (token.length == 0) {
             // Blank tokens are ok (from a trailing \t).
             continue;
         }
         // Each token begins with a one character parameter which specifies the
         // operation of this token (delete, insert, equality).
-        string param = token[1 .. $];
+        Str param = token[1 .. $];
         switch (token[0]) {
             case '+':
                 // decode would change all "+" to " "
-                param = param.replace("+", "%2b");
+                param = param.replace("+".to!Str, "%2b".to!Str);
                 param = decodeComponent(param);
                 //} catch (UnsupportedEncodingException e) {
                 //  // Not likely on modern system.
@@ -177,7 +180,7 @@ Diff[] fromDelta(string text1, string delta)
                 //  throw new IllegalArgumentException(
                 //      "Illegal escape in diff_fromDelta: " + param, e);
                 //}
-                diffs ~= Diff(Operation.INSERT, param);
+                diffs ~= DiffT!Str(Operation.INSERT, param);
                 break;
             case '-': // Fall through.
             case '=':
@@ -194,9 +197,9 @@ Diff[] fromDelta(string text1, string delta)
                 text = text1.takeExactly(n).array.to!string;
                 text1.popFrontN(n);
                 if (token[0] == '=') {
-                    diffs ~= Diff(Operation.EQUAL, text);
+                    diffs ~= DiffT!Str(Operation.EQUAL, text);
                 } else {
-                    diffs ~= Diff(Operation.DELETE, text);
+                    diffs ~= DiffT!Str(Operation.DELETE, text);
                 }
                 break;
             default:
@@ -210,25 +213,22 @@ Diff[] fromDelta(string text1, string delta)
     return diffs.data;
 }
 
-struct LinesToCharsResult {
-    wstring text1;
-    wstring text2;
-    wstring[] uniqueStrings;
-    bool opEquals()(auto ref const LinesToCharsResult other) const {
-        return text1 == other.text1 && 
+alias LinesToCharsResult = LinesToCharsResultT!string;
+
+struct LinesToCharsResultT(Str) {
+    Str text1;
+    Str text2;
+    Str[] uniqueStrings;
+    bool opEquals()(auto ref const LinesToCharsResultT!Str other) const {
+        return text1 == other.text1 &&
                text2 == other.text2 &&
                uniqueStrings == other.uniqueStrings;
     }
 }
 
-LinesToCharsResult linesToChars(string text1, string text2) {
-    return linesToChars(toUTF16(text1), toUTF16(text2));
-}
-
-LinesToCharsResult linesToChars(wstring text1, wstring text2) 
-{
-    size_t[wstring] lineHash;
-    LinesToCharsResult res;
+LinesToCharsResultT!Str linesToChars(Str)(Str text1, Str text2) {
+    size_t[Str] lineHash;
+    LinesToCharsResultT!Str res;
     res.uniqueStrings = [""];
     res.text1 = linesToCharsMunge(text1, res.uniqueStrings, lineHash);
     res.text2 = linesToCharsMunge(text2, res.uniqueStrings, lineHash);
@@ -242,26 +242,33 @@ LinesToCharsResult linesToChars(wstring text1, wstring text2)
  * Finally, it returns a string with each UTF-16 character representing the unique line index for
  * each line of text in the original block of text.
  */
-wstring linesToCharsMunge(wstring text, ref wstring[] lines, ref size_t[wstring] linehash)
-{
+Str linesToCharsMunge(Str)(Str text, ref Str[] lines, ref size_t[Str] linehash)
+if (isSomeString!Str) {
     sizediff_t lineStart = 0;
     sizediff_t lineEnd = -1;
-    wstring line;
-    auto chars = appender!wstring();
+    Str line;
+    static if (is(ElementEncodingType!Str : char)) {
+      size_t lineLimit = 0x80;
+    } else {
+      size_t lineLimit = 0x0D800;
+    }
+    enforce(lines.length < lineLimit, "Algorithm unique line limit exceeded for "
+        ~ Str.stringof ~ ". string may use 127 lines, wstring/dstring may use 55295 lines.");
+    auto chars = appender!Str();
     while( lineEnd+1 < text.length ){
-        lineEnd = text.indexOfAlt("\n", lineStart);
+        lineEnd = text.indexOfAlt("\n".to!Str, lineStart);
         if( lineEnd == -1 ) lineEnd = text.length - 1;
         line = text[lineStart..lineEnd + 1];
         lineStart = lineEnd + 1;
 
         if (auto pv = line in linehash) {
-            chars ~= cast(wchar)*pv;
+            chars ~= cast(ElementEncodingType!Str)*pv;
         } else {
             lines ~= line;
             linehash[line] = lines.length - 1;
             // Using UTF-16, only values up to 0xD7FF (55295) can be represented before
             // encoding errors or multi-byte encodings are applied.
-            chars ~= cast(wchar)(lines.length -1);
+            chars ~= cast(ElementEncodingType!Str)(lines.length -1);
         }
     }
     return chars[];
@@ -271,12 +278,11 @@ wstring linesToCharsMunge(wstring text, ref wstring[] lines, ref size_t[wstring]
  * Reverses the process of [linesToChars] by interpretting each UTF-16 character as an index into
  * linesArray, and assembles the indexed lines into a block of text.
  */
-void charsToLines(Diff[] diffs, wstring[] lineArray)
-{
-    import std.stdio;
+void charsToLines(Str)(DiffT!Str[] diffs, Str[] lineArray)
+if (isSomeString!Str) {
     foreach (ref d; diffs) {
-        auto str = appender!wstring();
-        foreach (wchar ch; d.text) {
+        auto str = appender!Str();
+        foreach (ElementEncodingType!Str ch; d.text) {
             str.put(lineArray[ch]);
         }
         d.text = str[];
@@ -285,8 +291,8 @@ void charsToLines(Diff[] diffs, wstring[] lineArray)
 
 /// The character offset should be aware of unicode, otherwise, the common prefix can end up
 /// splitting a single character's bytes.
-size_t commonPrefix(wstring text1, wstring text2)
-{
+size_t commonPrefix(Str)(Str text1, Str text2)
+if (isSomeString!Str) {
     auto n = min(text1.length, text2.length);
     foreach (i; 0 .. n)
         if (text1[i] != text2[i])
@@ -294,8 +300,8 @@ size_t commonPrefix(wstring text1, wstring text2)
     return n;
 }
 
-size_t commonSuffix(wstring text1, wstring text2)
-{
+size_t commonSuffix(Str)(Str text1, Str text2)
+if (isSomeString!Str) {
     auto n = min(text1.length, text2.length);
     foreach (i; 1 .. n+1)
         if (text1[$-i] != text2[$-i])
@@ -310,7 +316,8 @@ size_t commonSuffix(wstring text1, wstring text2)
 * @return The number of characters common to the end of the first
 *     string and the start of the second string.
 */
-size_t commonOverlap(wstring text1, wstring text2) {
+size_t commonOverlap(Str)(Str text1, Str text2)
+if (isSomeString!Str) {
     // Cache the text lengths to prevent multiple calls.
     auto text1_length = text1.length;
     auto text2_length = text2.length;
@@ -335,7 +342,7 @@ size_t commonOverlap(wstring text1, wstring text2) {
     int best = 0;
     int length = 1;
     while (true) {
-        wstring pattern = text1[text_length - length .. $];
+        Str pattern = text1[text_length - length .. $];
         auto found = text2.indexOf(pattern);
         if (found == -1) {
             return best;
@@ -349,12 +356,12 @@ size_t commonOverlap(wstring text1, wstring text2) {
 }
 
 /**-
-* The data structure representing a diff is a List of Diff objects:
-* {Diff(Operation.DELETE, "Hello"), Diff(Operation.INSERT, "Goodbye"),
-*  Diff(Operation.EQUAL, " world.")}
+* The data structure representing a diff is a List of DiffT objects:
+* {DiffT(Operation.DELETE, "Hello"), DiffT(Operation.INSERT, "Goodbye"),
+*  DiffT(Operation.EQUAL, " world.")}
 * which means: delete "Hello", add "Goodbye" and keep " world."
 */
-enum Operation { 
+enum Operation {
     DELETE,
     INSERT,
     EQUAL
@@ -364,16 +371,12 @@ enum Operation {
 /**
 * Struct representing one diff operation.
 */
-struct Diff {
+struct DiffT(Str)
+if (isSomeString!Str) {
     Operation operation;
-    wstring text;
+    Str text;
 
-    this(Operation operation, string text)
-    {
-        this(operation, toUTF16(text));
-    }
-
-    this(Operation operation, wstring text)
+    this(Operation operation, Str text)
     {
         this.operation = operation;
         this.text = text;
@@ -391,10 +394,10 @@ struct Diff {
             case Operation.EQUAL:
                 op = "EQUAL"; break;
         }
-        return "Diff(" ~ op ~ ",\"" ~ toUTF8(text) ~ "\")";
+        return "DiffT!" ~ Str.stringof ~ "(" ~ op ~ ",\"" ~ toUTF8(text) ~ "\")";
     }
 
-    bool opEquals(const Diff other) const
+    bool opEquals(const DiffT other) const
     {
         return operation == other.operation && text == other.text;
     }
@@ -408,13 +411,9 @@ struct Diff {
  * Most of the time checklines is wanted, so default to true.
  * @param text1 Old string to be diffed.
  * @param text2 New string to be diffed.
- * @return List of Diff objects.
+ * @return List of DiffT objects.
  */
-Diff[] diff_main(string text1, string text2) {
-    return diff_main(toUTF16(text1), toUTF16(text2));
-}
-
-Diff[] diff_main(wstring text1, wstring text2)
+DiffT!(Str)[] diff_main(Str)(Str text1, Str text2)
 {
     return diff_main(text1, text2, true);
 }
@@ -426,13 +425,9 @@ Diff[] diff_main(wstring text1, wstring text2)
  * @param checklines Speedup flag.  If false, then don't run a
  *     line-level diff first to identify the changed areas.
  *     If true, then run a faster slightly less optimal diff.
- * @return List of Diff objects.
+ * @return List of DiffT objects.
  */
-Diff[] diff_main(string text1, string text2, bool checklines) {
-    return diff_main(toUTF16(text1), toUTF16(text2), checklines);
-}
-
-Diff[] diff_main(wstring text1, wstring text2, bool checklines)
+DiffT!(Str)[] diff_main(Str)(Str text1, Str text2, bool checklines)
 {
     // Set a deadline by which time the diff must be complete.
     SysTime deadline;
@@ -453,19 +448,15 @@ Diff[] diff_main(wstring text1, wstring text2, bool checklines)
  *     line-level diff first to identify the changed areas.
  *     If true, then run a faster slightly less optimal diff.
  * @param deadline Time when the diff should be complete by.  Used
- *     internally for recursive calls.  Users should set DiffTimeout
+ *     internally for recursive calls.  Users should set DiffTTimeout
  *     instead.
- * @return List of Diff objects.
+ * @return List of DiffT objects.
  */
-Diff[] diff_main(string text1, string text2, bool checklines, SysTime deadline) {
-    return diff_main(toUTF16(text1), toUTF16(text2), checklines, deadline);
-}
-
-Diff[] diff_main(wstring text1, wstring text2, bool checklines, SysTime deadline)
+DiffT!(Str)[] diff_main(Str)(Str text1, Str text2, bool checklines, SysTime deadline)
 {
-    Diff[] diffs;
+    DiffT!(Str)[] diffs;
     if( text1 == text2 ){
-        if( text1.length != 0 ) diffs ~= Diff(Operation.EQUAL, text1);
+        if( text1.length != 0 ) diffs ~= DiffT!Str(Operation.EQUAL, text1);
         return diffs;
     }
 
@@ -480,14 +471,14 @@ Diff[] diff_main(wstring text1, wstring text2, bool checklines, SysTime deadline
     text2 = text2[0 .. $ - pos];
 
     // Compute the diff on the middle block.
-    diffs = computeDiffs(text1, text2, checklines, deadline);
+    diffs = computeDiffTs(text1, text2, checklines, deadline);
 
       // Restore the prefix and suffix.
     if( prefix.length != 0 ) {
-        diffs.insert(0, [Diff(Operation.EQUAL, prefix)]);
+        diffs.insert(0, [DiffT!Str(Operation.EQUAL, prefix)]);
     }
     if( suffix.length != 0 ) {
-        diffs ~= Diff(Operation.EQUAL, suffix);
+        diffs ~= DiffT!Str(Operation.EQUAL, suffix);
     }
 
     cleanupMerge(diffs);
@@ -495,21 +486,23 @@ Diff[] diff_main(wstring text1, wstring text2, bool checklines, SysTime deadline
 }
 
 
+alias HalfMatch = HalfMatchT!string;
 
-struct HalfMatch {
-    wstring prefix1;
-    wstring suffix1;
-    wstring suffix2;
-    wstring prefix2;
-    wstring commonMiddle;
+struct HalfMatchT(Str) {
+    Str prefix1;
+    Str suffix1;
+    Str suffix2;
+    Str prefix2;
+    Str commonMiddle;
 
-    bool opEquals()(auto ref const HalfMatch other) const {
+    bool opEquals()(auto ref const HalfMatchT!Str other) const {
         return prefix1 == other.prefix1 &&
                suffix1 == other.suffix1 &&
                prefix2 == other.prefix2 &&
                suffix2 == other.suffix2;
     }
 }
+
 /*
  * Do the two texts share a Substring which is at least half the length of
  * the longer text?
@@ -520,20 +513,20 @@ struct HalfMatch {
  *     suffix of text1, the prefix of text2, the suffix of text2 and the
  *     common middle.  Or null if there was no match.
  */
-bool halfMatch(wstring text1, wstring text2, out HalfMatch halfmatch){
+bool halfMatch(Str)(Str text1, Str text2, out HalfMatchT!Str halfmatch){
     if (diffTimeout <= 0.seconds) {
         // Don't risk returning a non-optimal diff if we have unlimited time.
         return false;
     }
-    wstring longtext = text1.length > text2.length ? text1 : text2;
-    wstring shorttext = text1.length > text2.length ? text2 : text1;
+    Str longtext = text1.length > text2.length ? text1 : text2;
+    Str shorttext = text1.length > text2.length ? text2 : text1;
     if( longtext.length < 4 || shorttext.length * 2 < longtext.length ) return false; //pointless
-    HalfMatch hm1;
-    HalfMatch hm2;
+    HalfMatchT!Str hm1;
+    HalfMatchT!Str hm2;
     auto is_hm1 = halfMatchI(longtext, shorttext, (longtext.length + 3) / 4, hm1);
     auto is_hm2 = halfMatchI(longtext, shorttext, (longtext.length + 1) / 2, hm2);
-    HalfMatch hm;
-    if( !is_hm1 && !is_hm2 ){ 
+    HalfMatchT!Str hm;
+    if( !is_hm1 && !is_hm2 ){
         return false;
     } else if( !is_hm2  ){
         hm = hm1;
@@ -543,7 +536,7 @@ bool halfMatch(wstring text1, wstring text2, out HalfMatch halfmatch){
         hm = hm1.commonMiddle.length > hm2.commonMiddle.length ? hm1 : hm2;
     }
 
-    if( text1.length > text2.length ) { 
+    if( text1.length > text2.length ) {
         halfmatch = hm;
         return true;
     }
@@ -556,14 +549,14 @@ bool halfMatch(wstring text1, wstring text2, out HalfMatch halfmatch){
 }
 
 
-bool halfMatchI(wstring longtext, wstring shorttext, sizediff_t i, out HalfMatch hm){
+bool halfMatchI(Str)(Str longtext, Str shorttext, sizediff_t i, out HalfMatchT!Str hm){
     auto seed = longtext.substr(i, longtext.length / 4);
     sizediff_t j = -1;
-    wstring best_common;
-    wstring best_longtext_a;
-    wstring best_longtext_b;
-    wstring best_shorttext_a;
-    wstring best_shorttext_b;
+    Str best_common;
+    Str best_longtext_a;
+    Str best_longtext_b;
+    Str best_shorttext_a;
+    Str best_shorttext_b;
     while( j < cast(sizediff_t)shorttext.length && ( j = shorttext.indexOfAlt(seed, j + 1)) != -1 ){
         auto prefixLen = commonPrefix(longtext[i .. $], shorttext[j .. $]);
         auto suffixLen = commonSuffix(longtext[0 .. i], shorttext[0 .. j]);
@@ -597,18 +590,18 @@ bool halfMatchI(wstring longtext, wstring shorttext, sizediff_t i, out HalfMatch
  *     line-level diff first to identify the changed areas.
  *     If true, then run a faster slightly less optimal diff.
  * @param deadline Time when the diff should be complete by.
- * @return List of Diff objects.
+ * @return List of DiffT objects.
  */
-Diff[] computeDiffs(wstring text1, wstring text2, bool checklines, SysTime deadline)
+DiffT!(Str)[] computeDiffTs(Str)(Str text1, Str text2, bool checklines, SysTime deadline)
 {
-    Diff[] diffs;
+    DiffT!(Str)[] diffs;
 
     if( text1.length == 0 ){
-        diffs ~= Diff(Operation.INSERT, text2);
+        diffs ~= DiffT!Str(Operation.INSERT, text2);
         return diffs;
     }
     if( text2.length == 0 ){
-        diffs ~= Diff(Operation.DELETE, text1);
+        diffs ~= DiffT!Str(Operation.DELETE, text1);
         return diffs;
     }
 
@@ -617,25 +610,25 @@ Diff[] computeDiffs(wstring text1, wstring text2, bool checklines, SysTime deadl
     auto i = longtext.indexOf(shorttext);
     if( i != -1 ){
         Operation op = (text1.length > text2.length) ? Operation.DELETE : Operation.INSERT;
-        diffs ~= Diff(op, longtext[0 .. i]);
-        diffs ~= Diff(Operation.EQUAL, shorttext);
-        diffs ~= Diff(op, longtext[i + shorttext.length .. $]);
+        diffs ~= DiffT!Str(op, longtext[0 .. i]);
+        diffs ~= DiffT!Str(Operation.EQUAL, shorttext);
+        diffs ~= DiffT!Str(op, longtext[i + shorttext.length .. $]);
         return diffs;
     }
 
     if( shorttext.length == 1 ){
-        diffs ~= Diff(Operation.DELETE, text1);
-        diffs ~= Diff(Operation.INSERT, text2);
+        diffs ~= DiffT!Str(Operation.DELETE, text1);
+        diffs ~= DiffT!Str(Operation.INSERT, text2);
         return diffs;
     }
-    HalfMatch hm;
+    HalfMatchT!Str hm;
     auto is_hm = halfMatch(text1, text2, hm);
     if( is_hm ){
         auto diffs_a = diff_main(hm.prefix1, hm.prefix2, checklines, deadline);
         auto diffs_b = diff_main(hm.suffix1, hm.suffix2, checklines, deadline);
 
         diffs = diffs_a;
-        diffs ~= Diff(Operation.EQUAL, hm.commonMiddle);
+        diffs ~= DiffT!Str(Operation.EQUAL, hm.commonMiddle);
         diffs ~= diffs_b;
         return diffs;
     }
@@ -647,11 +640,7 @@ Diff[] computeDiffs(wstring text1, wstring text2, bool checklines, SysTime deadl
     return bisect(text1, text2, deadline);
 }
 
-Diff[] diff_lineMode(string text1, string text2, SysTime deadline) {
-    return diff_lineMode(toUTF16(text1), toUTF16(text2), deadline);
-}
-
-Diff[] diff_lineMode(wstring text1, wstring text2, SysTime deadline)
+DiffT!(Str)[] diff_lineMode(Str)(Str text1, Str text2, SysTime deadline)
 {
     auto b = linesToChars(text1, text2);
 
@@ -660,12 +649,12 @@ Diff[] diff_lineMode(wstring text1, wstring text2, SysTime deadline)
     charsToLines(diffs, b.uniqueStrings);
     cleanupSemantic(diffs);
 
-    diffs ~= Diff(Operation.EQUAL, "");
+    diffs ~= DiffT!Str(Operation.EQUAL, "");
     auto pointer = 0;
     auto count_delete = 0;
     auto count_insert = 0;
-    wstring text_delete;
-    wstring text_insert;
+    Str text_delete;
+    Str text_insert;
     while( pointer < diffs.length ){
         final switch( diffs[pointer].operation ) {
             case Operation.INSERT:
@@ -700,11 +689,7 @@ Diff[] diff_lineMode(wstring text1, wstring text2, SysTime deadline)
     return diffs;
 }
 
-Diff[] bisect(string text1, string text2, SysTime deadline) {
-    return bisect(toUTF16(text1), toUTF16(text2), deadline);
-}
-
-Diff[] bisect(wstring text1, wstring text2, SysTime deadline)
+DiffT!(Str)[] bisect(Str)(Str text1, Str text2, SysTime deadline)
 {
     auto text1_len = text1.length;
     auto text2_len = text2.length;
@@ -755,7 +740,7 @@ Diff[] bisect(wstring text1, wstring text2, SysTime deadline)
                     auto x2 = text1_len - v2[k2_offset];
                     if( x1 >= x2 ) return bisectSplit(text1, text2, x1, y1, deadline);
                 }
-            } 
+            }
         }
         for( auto k2 = -d + k2start; k2 <= d - k2end; k2 += 2) {
             auto k2_offset = v_offset + k2;
@@ -794,32 +779,32 @@ Diff[] bisect(wstring text1, wstring text2, SysTime deadline)
             }
         }
     }
-    Diff[] diffs;
-    diffs ~= Diff(Operation.DELETE, text1);
-    diffs ~= Diff(Operation.INSERT, text2);
+    DiffT!(Str)[] diffs;
+    diffs ~= DiffT!Str(Operation.DELETE, text1);
+    diffs ~= DiffT!Str(Operation.INSERT, text2);
     return diffs;
 }
 
 
-Diff[] bisectSplit(wstring text1, wstring text2, sizediff_t x, sizediff_t y, SysTime deadline)
+DiffT!(Str)[] bisectSplit(Str)(Str text1, Str text2, sizediff_t x, sizediff_t y, SysTime deadline)
 {
     auto text1a = text1[0 .. x];
     auto text2a = text2[0 .. y];
     auto text1b = text1[x .. $];
     auto text2b = text2[y .. $];
 
-    Diff[] diffs = diff_main(text1a, text2a, false, deadline);
-    Diff[] diffsb = diff_main(text1b, text2b, false, deadline);
+    DiffT!(Str)[] diffs = diff_main(text1a, text2a, false, deadline);
+    DiffT!(Str)[] diffsb = diff_main(text1b, text2b, false, deadline);
     diffs ~= diffsb;
     return diffs;
 }
 
-void cleanupSemantic(ref Diff[] diffs) 
+void cleanupSemantic(Str)(ref DiffT!(Str)[] diffs)
 {
     bool changes = false;
     size_t[] equalities;
 
-    wstring last_equality = null;
+    Str last_equality = null;
     size_t pointer = 0;
     size_t length_insertions1 = 0;
     size_t length_deletions1 = 0;
@@ -841,13 +826,13 @@ void cleanupSemantic(ref Diff[] diffs)
                 length_deletions2 += diffs[pointer].text.length;
             }
 
-            if( last_equality !is null && 
+            if( last_equality !is null &&
                 (last_equality.length <= max(length_insertions1, length_deletions1))
                 && (last_equality.length <= max(length_insertions2, length_deletions2)))
             {
                 // Duplicate record.
-                diffs.insert(equalities[$-1], [Diff(Operation.DELETE, last_equality)]);
-                diffs[equalities[$-1]+1] = Diff(Operation.INSERT, diffs[equalities[$-1]+1].text);
+                diffs.insert(equalities[$-1], [DiffT!Str(Operation.DELETE, last_equality)]);
+                diffs[equalities[$-1]+1] = DiffT!Str(Operation.INSERT, diffs[equalities[$-1]+1].text);
 
                 // Throw away the equality we just deleted.
                 equalities.length--;
@@ -890,11 +875,11 @@ void cleanupSemantic(ref Diff[] diffs)
             auto overlap_len1 = commonOverlap(deletion, insertion);
             auto overlap_len2 = commonOverlap(insertion, deletion);
             if( overlap_len1 >= overlap_len2 ){
-                if( overlap_len1 * 2 >= deletion.length || 
+                if( overlap_len1 * 2 >= deletion.length ||
                     overlap_len1 * 2 >= insertion.length) {
                     //Overlap found.
                     //Insert an equality and trim the surrounding edits.
-                    diffs.insert(pointer, [Diff(Operation.EQUAL, insertion[0 .. overlap_len1])]);
+                    diffs.insert(pointer, [DiffT!Str(Operation.EQUAL, insertion[0 .. overlap_len1])]);
                     diffs[pointer - 1].text = deletion[0 .. $ - overlap_len1];
                     diffs[pointer + 1].text = insertion[overlap_len1 .. $];
                     pointer++;
@@ -902,7 +887,7 @@ void cleanupSemantic(ref Diff[] diffs)
             } else {
                 if( overlap_len2 * 2 >= deletion.length ||
                     overlap_len2 * 2 >= insertion.length) {
-                    diffs.insert(pointer, [Diff(Operation.EQUAL, deletion[0 .. overlap_len2])]);
+                    diffs.insert(pointer, [DiffT!Str(Operation.EQUAL, deletion[0 .. overlap_len2])]);
 
                     diffs[pointer - 1].operation = Operation.INSERT;
                     diffs[pointer - 1].text = insertion[0 .. $ - overlap_len2];
@@ -921,9 +906,9 @@ void cleanupSemantic(ref Diff[] diffs)
  * Look for single edits surrounded on both sides by equalities
  * which can be shifted sideways to align the edit to a word boundary.
  * e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
- * @param diffs List of Diff objects.
+ * @param diffs List of DiffT objects.
  */
-void cleanupSemanticLossless(ref Diff[] diffs)
+void cleanupSemanticLossless(Str)(ref DiffT!(Str)[] diffs)
 {
     auto pointer = 1;
     // Intentionally ignore the first and last element (don't need checking).
@@ -992,15 +977,15 @@ void cleanupSemanticLossless(ref Diff[] diffs)
 /**
  * Reorder and merge like edit sections.  Merge equalities.
  * Any edit section can move as sizediff_t as it doesn't cross an equality.
- * @param diffs List of Diff objects.
+ * @param diffs List of DiffT objects.
  */
-void cleanupMerge(ref Diff[] diffs) {
-    diffs ~= Diff(Operation.EQUAL, "");
+void cleanupMerge(Str)(ref DiffT!(Str)[] diffs) {
+    diffs ~= DiffT!(Str)(Operation.EQUAL, "");
     size_t pointer = 0;
     size_t count_delete = 0;
     size_t count_insert = 0;
-    wstring text_delete;
-    wstring text_insert;
+    Str text_delete;
+    Str text_insert;
     while(pointer < diffs.length) {
         final switch(diffs[pointer].operation){
             case Operation.INSERT:
@@ -1026,7 +1011,7 @@ void cleanupMerge(ref Diff[] diffs) {
                                 diffs[pointer - count_delete - count_insert - 1].text
                                     ~= text_insert[0 .. commonlength];
                             } else {
-                                diffs.insert(0, [Diff(Operation.EQUAL, text_insert[0 .. commonlength])]);
+                                diffs.insert(0, [DiffT!Str(Operation.EQUAL, text_insert[0 .. commonlength])]);
                                 pointer++;
                             }
                             text_insert = text_insert[commonlength .. $];
@@ -1041,12 +1026,20 @@ void cleanupMerge(ref Diff[] diffs) {
                     }
                     // Delete the offending records and add the merged ones.
                     if (count_delete == 0) {
-                        diffs.splice(pointer - count_insert, count_delete + count_insert, [Diff(Operation.INSERT, text_insert)]);
+                        diffs.splice(
+                                pointer - count_insert,
+                                count_delete + count_insert,
+                                [DiffT!Str(Operation.INSERT, text_insert)]);
                     } else if (count_insert == 0) {
-
-                        diffs.splice(pointer - count_delete, count_delete + count_insert, [Diff(Operation.DELETE, text_delete)]);
+                        diffs.splice(
+                                pointer - count_delete,
+                                count_delete + count_insert,
+                                [DiffT!Str(Operation.DELETE, text_delete)]);
                     } else {
-                        diffs.splice(pointer - count_delete - count_insert, count_delete + count_insert, [Diff(Operation.DELETE, text_delete), Diff(Operation.INSERT, text_insert)]);
+                        diffs.splice(
+                                pointer - count_delete - count_insert,
+                                count_delete + count_insert,
+                                [DiffT!Str(Operation.DELETE, text_delete), DiffT!Str(Operation.INSERT, text_insert)]);
                     }
                     pointer = pointer - count_delete - count_insert +
                             (count_delete != 0 ? 1 : 0) + (count_insert != 0 ? 1 : 0) + 1;
@@ -1066,11 +1059,11 @@ void cleanupMerge(ref Diff[] diffs) {
     if( diffs[$-1].text.length == 0){
         diffs.length--;
     }
-    
+
     bool changes = false;
     pointer = 1;
     while( pointer + 1 < diffs.length ) {
-        if( diffs[pointer - 1].operation == Operation.EQUAL && 
+        if( diffs[pointer - 1].operation == Operation.EQUAL &&
             diffs[pointer + 1].operation == Operation.EQUAL)
         {
             if( diffs[pointer].text.endsWith(diffs[pointer - 1].text)) {
@@ -1103,7 +1096,7 @@ void cleanupMerge(ref Diff[] diffs) {
  * @param two Second string.
  * @return The score.
  */
-int cleanupSemanticScore(wstring one, wstring two)
+int cleanupSemanticScore(Str)(Str one, Str two)
 {
     if( one.length == 0 || two.length == 0) return 6; //Edges are the best
     auto char1 = one[$-1];
@@ -1115,8 +1108,8 @@ int cleanupSemanticScore(wstring one, wstring two)
     auto whitespace2 = nonAlphaNumeric2 && isWhite(char2);
     auto lineBreak1 = whitespace1 && isControl(char1);
     auto lineBreak2 = whitespace2 && isControl(char2);
-    auto blankLine1 = lineBreak1 &&  match(one, `\n\r?\n\Z`w);
-    auto blankLine2 = lineBreak2 &&  match(two, `\A\r?\n\r?\n`w);
+    auto blankLine1 = lineBreak1 &&  match(one, `\n\r?\n\Z`.to!Str);
+    auto blankLine2 = lineBreak2 &&  match(two, `\A\r?\n\r?\n`.to!Str);
 
     if (blankLine1 || blankLine2) return 5;
     else if (lineBreak1 || lineBreak2) return 4;
@@ -1131,12 +1124,12 @@ int cleanupSemanticScore(wstring one, wstring two)
 /**
  * Reduce the number of edits by eliminating operationally trivial
  * equalities.
- * @param diffs List of Diff objects.
+ * @param diffs List of DiffT objects.
  */
-void cleanupEfficiency(ref Diff[] diffs) {
+void cleanupEfficiency(Str)(ref DiffT!(Str)[] diffs) {
     bool changes = false;
     size_t[] equalities;
-    wstring lastequality;
+    Str lastequality;
     size_t pointer = 0;
     auto pre_ins = false;
     auto pre_del = false;
@@ -1171,7 +1164,7 @@ void cleanupEfficiency(ref Diff[] diffs) {
                     )
                 )
             {
-                diffs.insert(equalities[$-1], [Diff(Operation.DELETE, lastequality)]);
+                diffs.insert(equalities[$-1], [DiffT!Str(Operation.DELETE, lastequality)]);
                 diffs[equalities[$-1] + 1].operation = Operation.INSERT;
                 equalities.length--;
                 equalities.assumeSafeAppend;
@@ -1206,16 +1199,16 @@ void cleanupEfficiency(ref Diff[] diffs) {
  * loc is a location in text1, comAdde and return the equivalent location in
  * text2.
  * e.g. "The cat" vs "The big cat", 1->1, 5->8
- * @param diffs List of Diff objects.
+ * @param diffs List of DiffT objects.
  * @param loc Location within text1.
  * @return Location within text2.
  */
-sizediff_t xIndex(Diff[] diffs, sizediff_t loc){
+sizediff_t xIndex(Str)(DiffT!(Str)[] diffs, sizediff_t loc) {
     auto chars1 = 0;
     auto chars2 = 0;
     auto last_chars1 = 0;
     auto last_chars2 = 0;
-    Diff lastDiff;
+    DiffT!Str lastDiffT;
     foreach ( diff; diffs) {
         if (diff.operation != Operation.INSERT) {
             // Equality or deletion.
@@ -1227,13 +1220,13 @@ sizediff_t xIndex(Diff[] diffs, sizediff_t loc){
         }
         if (chars1 > loc) {
             // Overshot the location.
-            lastDiff = diff;
+            lastDiffT = diff;
             break;
         }
         last_chars1 = chars1;
         last_chars2 = chars2;
     }
-    if (lastDiff.operation == Operation.DELETE) {
+    if (lastDiffT.operation == Operation.DELETE) {
         // The location was deleted.
         return last_chars2;
     }
