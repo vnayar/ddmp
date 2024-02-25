@@ -105,6 +105,8 @@ void addContext(Str)(ref PatchT!Str patch, Str text)
 {
 	if( text.length == 0 ) return;
 
+    import std.stdio : writeln;
+    writeln("addContext 0: patch=", patch, ", text=", text);
 	auto pattern = text.substr(patch.start2, patch.length1);
 	sizediff_t padding = 0;
 
@@ -121,12 +123,17 @@ void addContext(Str)(ref PatchT!Str patch, Str text)
 	// Add the prefix.
 	auto prefix = text[max(0, patch.start2 - padding)..patch.start2];
 	if( prefix.length != 0 ){
+        import std.stdio;
+        writeln("patch.addContext 2: prefix=", prefix);
 		patch.diffs.insert(0, [DiffT!Str(Operation.EQUAL, prefix)]);
 	}
 
 	// Add the suffix.
 	auto suffix = text[patch.start2 + patch.length1..min(text.length, patch.start2 + patch.length1 + padding)];
 	if( suffix.length != 0 ){
+        import std.stdio;
+        writeln("patch.addContext 3: text=", text);
+        writeln("patch.addContext 3: suffix=", suffix);
 		patch.diffs ~= DiffT!Str(Operation.EQUAL, suffix);
 	}
 
@@ -180,6 +187,8 @@ if (isSomeString!Str) {
  */
 PatchT!(Str)[] patch_make(Str)(Str text1, DiffT!(Str)[] diffs)
 {
+    import std.stdio : writeln;
+    writeln("patch_make 0: text1=", text1, ", diffs=", diffs);
 	PatchT!(Str)[] patches;
 	if( diffs.length == 0 ) return patches;
 
@@ -212,13 +221,16 @@ PatchT!(Str)[] patch_make(Str)(Str text1, DiffT!(Str)[] diffs)
 				break;
 			case Operation.EQUAL:
 				if( diff.text.length <= 2 * PATCH_MARGIN && patch.diffs.length != 0 && diff != diffs[$-1] ){
+                    writeln("patch_make 3: EQUAL 1");
 					patch.diffs ~= diff;
 					patch.length1 += diff.text.length;
 					patch.length2 += diff.text.length;
 				}
 
 				if( diff.text.length >= 2 * PATCH_MARGIN ){
+                    writeln("patch_make 3: EQUAL 2");
 					if( patch.diffs.length != 0 ){
+                        writeln("patch_make 3: EQUAL 3");
 						addContext(patch, prepatch_text);
 						patches ~= patch;
 						patch = PatchT!Str();
@@ -230,10 +242,12 @@ PatchT!(Str)[] patch_make(Str)(Str text1, DiffT!(Str)[] diffs)
 		}
         // Update the current character count.
         if (diff.operation != Operation.INSERT) {
-          char_count1 += diff.text.length;
+            writeln("patch_make 5: INSERT diff.text.length=", diff.text.length);
+            char_count1 += diff.text.length;
         }
         if (diff.operation != Operation.DELETE) {
-          char_count2 += diff.text.length;
+            writeln("patch_make 5: DELETE diff.text.length=", diff.text.length);
+            char_count2 += diff.text.length;
         }
     }
 	// Pick up the leftover patch if not empty.

@@ -250,7 +250,7 @@ if (isSomeString!Str) {
     static if (is(ElementEncodingType!Str : char)) {
       size_t lineLimit = 0x80;
     } else {
-      size_t lineLimit = 0x0D800;
+      size_t lineLimit = 0xD800;
     }
     enforce(lines.length < lineLimit, "Algorithm unique line limit exceeded for "
         ~ Str.stringof ~ ". string may use 127 lines, wstring/dstring may use 55295 lines.");
@@ -1002,7 +1002,7 @@ void cleanupMerge(Str)(ref DiffT!(Str)[] diffs) {
                 // Upon reaching an equality, check for prior redundancies.
                 if (count_delete + count_insert > 1) {
                     if (count_delete != 0 && count_insert != 0) {
-                        // Factor out any common prefixies.
+                        // Factor out any common prefixes.
                         if (auto commonlength = commonPrefix(text_insert, text_delete)) {
                             if (pointer > count_delete + count_insert &&
                                 diffs[pointer - count_delete - count_insert - 1].operation
@@ -1017,7 +1017,7 @@ void cleanupMerge(Str)(ref DiffT!(Str)[] diffs) {
                             text_insert = text_insert[commonlength .. $];
                             text_delete = text_delete[commonlength .. $];
                         }
-                        // Factor out any common suffixies.
+                        // Factor out any common suffixes.
                         if (auto commonlength = commonSuffix(text_insert, text_delete)) {
                             diffs[pointer].text = text_insert[$ - commonlength .. $] ~ diffs[pointer].text;
                             text_insert = text_insert[0 .. $ - commonlength];
