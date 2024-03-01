@@ -735,20 +735,6 @@ void testPatchMake() {
   auto patches = patch_make("", "");
   assertEquals("", patch_toText(patches));
 
-  /// DEBUGGING BEGIN
-  auto text3 = "Bot";
-  auto text4 = "Bet";
-  patches = patch_make(text3, text4);
-  import std.stdio;
-  writeln("patches.length=", patches.length);
-  writeln("patches[0].diffs=", patches[0].diffs);
-  writeln("patches[0].start1=", patches[0].start1);
-  writeln("patches[0].start2=", patches[0].start2);
-  writeln("patches[0].length1=", patches[0].length1);
-  writeln("patches[0].length2=", patches[0].length2);
-  assertEquals("hambocrab", patch_toText(patches));
-  /// DEBUGGING END
-
   auto text1 = "The quick brown fox jumps over the lazy dog.";
   auto text2 = "That quick brown fox jumped over a lazy dog.";
   // Text2+Text1 inputs.
@@ -794,8 +780,8 @@ void testPatchMake() {
   patches = patch_make(text1, text2);
   assertEquals(expectedPatch, patch_toText(patches));
 
-  // Test null inputs.
-  assertThrown(patch_make!string(null));
+  // (Don't) Test null inputs. (not needed in D because null is a valid empty string)
+  //assertThrown(patch_make!string(null));
 }
 
 void testPatchSplitMax() {

@@ -47,6 +47,14 @@ struct PatchT(Str) {
     sizediff_t length1;
     sizediff_t length2;
 
+    bool isNull() const {
+        if (start1 == 0 && start2 == 0 && length1 == 0 && length2 == 0
+                && diffs.length == 0) {
+            return true;
+        }
+        return false;
+    }
+
     string toString()
     const {
     	import std.uri : encode;
@@ -105,35 +113,34 @@ void addContext(Str)(ref PatchT!Str patch, Str text)
 {
 	if( text.length == 0 ) return;
 
-    import std.stdio : writeln;
-    writeln("addContext 0: patch=", patch, ", text=", text);
 	auto pattern = text.substr(patch.start2, patch.length1);
 	sizediff_t padding = 0;
 
 	// Look for the first and last matches of pattern in text.  If two
 	// different matches are found, increase the pattern length.
 	while( text.indexOfAlt(pattern) != text.lastIndexOf(pattern)
-		  && pattern.length < MATCH_MAXBITS - PATCH_MARGIN - PATCH_MARGIN ){
+            && pattern.length < MATCH_MAXBITS - PATCH_MARGIN - PATCH_MARGIN ){
 		padding += PATCH_MARGIN;
-		pattern = text[max(0, patch.start2 - padding)..min(text.length, patch .start2 + patch.length1 + padding)];
+		pattern = text.substr(
+                max(0, patch.start2 - padding),
+                min(text.length, patch.start2 + patch.length1 + padding) - max(0, patch.start2 - padding));
 	}
 	// Add one chunk for good luck.
 	padding += PATCH_MARGIN;
 
 	// Add the prefix.
-	auto prefix = text[max(0, patch.start2 - padding)..patch.start2];
+	auto prefix = text.substr(
+            max(0, patch.start2 - padding),
+            patch.start2 - max(0, patch.start2 - padding));
 	if( prefix.length != 0 ){
-        import std.stdio;
-        writeln("patch.addContext 2: prefix=", prefix);
 		patch.diffs.insert(0, [DiffT!Str(Operation.EQUAL, prefix)]);
 	}
 
 	// Add the suffix.
-	auto suffix = text[patch.start2 + patch.length1..min(text.length, patch.start2 + patch.length1 + padding)];
+	auto suffix = text.substr(
+            patch.start2 + patch.length1,
+            min(text.length, patch.start2 + patch.length1 + padding) - (patch.start2 + patch.length1));
 	if( suffix.length != 0 ){
-        import std.stdio;
-        writeln("patch.addContext 3: text=", text);
-        writeln("patch.addContext 3: suffix=", suffix);
 		patch.diffs ~= DiffT!Str(Operation.EQUAL, suffix);
 	}
 
@@ -171,10 +178,10 @@ PatchT!(Str)[] patch_make(Str)(Str text1, Str text2) {
  */
 PatchT!(Str)[] patch_make(Str)(DiffT!(Str)[] diffs)
 if (isSomeString!Str) {
-  // Check for null inputs not needed since null can't be passed in C#.
-  // No origin string provided, comAdde our own.
-  auto text1 = diff_text1(diffs);
-  return patch_make(text1, diffs);
+    // Check for null inputs not needed since null can't be passed in C#.
+    // No origin string provided, comAdde our own.
+    auto text1 = diff_text1(diffs);
+    return patch_make(text1, diffs);
 }
 
 
@@ -187,8 +194,6 @@ if (isSomeString!Str) {
  */
 PatchT!(Str)[] patch_make(Str)(Str text1, DiffT!(Str)[] diffs)
 {
-    import std.stdio : writeln;
-    writeln("patch_make 0: text1=", text1, ", diffs=", diffs);
 	PatchT!(Str)[] patches;
 	if( diffs.length == 0 ) return patches;
 
@@ -215,22 +220,19 @@ PatchT!(Str)[] patch_make(Str)(Str text1, DiffT!(Str)[] diffs)
 				postpatch_text.insert(char_count2, diff.text);
 				break;
 			case Operation.DELETE:
-				patch.length2 += diff.text.length;
+				patch.length1 += diff.text.length;
 				patch.diffs ~= diff;
 				postpatch_text.remove(char_count2, diff.text.length);
 				break;
 			case Operation.EQUAL:
 				if( diff.text.length <= 2 * PATCH_MARGIN && patch.diffs.length != 0 && diff != diffs[$-1] ){
-                    writeln("patch_make 3: EQUAL 1");
 					patch.diffs ~= diff;
 					patch.length1 += diff.text.length;
 					patch.length2 += diff.text.length;
 				}
 
 				if( diff.text.length >= 2 * PATCH_MARGIN ){
-                    writeln("patch_make 3: EQUAL 2");
 					if( patch.diffs.length != 0 ){
-                        writeln("patch_make 3: EQUAL 3");
 						addContext(patch, prepatch_text);
 						patches ~= patch;
 						patch = PatchT!Str();
@@ -242,11 +244,9 @@ PatchT!(Str)[] patch_make(Str)(Str text1, DiffT!(Str)[] diffs)
 		}
         // Update the current character count.
         if (diff.operation != Operation.INSERT) {
-            writeln("patch_make 5: INSERT diff.text.length=", diff.text.length);
             char_count1 += diff.text.length;
         }
         if (diff.operation != Operation.DELETE) {
-            writeln("patch_make 5: DELETE diff.text.length=", diff.text.length);
             char_count2 += diff.text.length;
         }
     }
@@ -278,21 +278,24 @@ struct PatchApplyResultT(Str) {
 
 PatchApplyResultT!Str apply(Str)(PatchT!(Str)[] patches, Str text)
 {
-    PatchApplyResultT!Str result;
+    PatchApplyResultT!Str result = PatchApplyResultT!Str(text, []);
     if( patches.length == 0 ) return result;
 
-    auto nullPadding = addPadding(patches);
- 	text = nullPadding ~ text ~ nullPadding;
- 	splitMax(patches);
+    // Deep copy the patches so that no changes are made to the originals.
+    PatchT!(Str)[] patchesCopy = patches.dup;
 
- 	result.patchesApplied.length = patches.length; // init patchesApplied array
+    auto nullPadding = addPadding(patchesCopy);
+ 	text = nullPadding ~ text ~ nullPadding;
+ 	splitMax(patchesCopy);
+
  	sizediff_t x = 0;
 	// delta keeps track of the offset between the expected and actual
 	// location of the previous patch.  If there are patches expected at
 	// positions 10 and 20, but the first patch was found at 12, delta is 2
 	// and the second patch has an effective expected position of 22.
 	sizediff_t delta = 0;
-	foreach( patch ; patches ){
+ 	result.patchesApplied.length = patchesCopy.length; // init patchesApplied array
+	foreach( patch ; patchesCopy ){
 		auto expected_loc = patch.start2 + delta;
 		auto text1 =  diff_text1(patch.diffs);
 		sizediff_t start_loc;
@@ -303,7 +306,7 @@ PatchApplyResultT!Str apply(Str)(PatchT!(Str)[] patches, Str text)
          	start_loc = match_main(text, text1.substr(0, MATCH_MAXBITS), expected_loc);
          	if( start_loc != -1 ){
          		end_loc = match_main(text,
-         			text1.substr(text1.length - MATCH_MAXBITS),
+         			text1[$ - MATCH_MAXBITS .. $],
          			expected_loc + text1.length - MATCH_MAXBITS);
          		if( end_loc == -1 || start_loc >= end_loc ){
          			// Can't find valid trailing context.  Drop this patch.
@@ -326,7 +329,7 @@ PatchApplyResultT!Str apply(Str)(PatchT!(Str)[] patches, Str text)
 			if( end_loc == -1 ){
 				text2 = text[ start_loc .. min(start_loc + text1.length, text.length) ];
 			} else {
-				text2 = text[ start_loc .. min(end_loc + MATCH_MAXBITS, text.length) ];
+				text2 = text[ start_loc .. min(end_loc + MATCH_MAXBITS - start_loc, text.length) ];
 			}
 			if( text1 == text2 ) {
 				// Perfect match, just shove the replacement text in.
@@ -348,7 +351,10 @@ PatchApplyResultT!Str apply(Str)(PatchT!(Str)[] patches, Str text)
 								text.insert(start_loc + index2, diff.text);
 							} else if( diff.operation == Operation.DELETE ){
 								// Deletion
-								text.remove(start_loc + index2, xIndex(diffs, index1 + diff.text.length) - index2);
+								//text.remove(start_loc + index2, xIndex(diffs, index1 + diff.text.length) - index2);
+                                text = text[0 .. start_loc + index2]
+                                        ~ text[min(text.length, start_loc
+                                            + xIndex(diffs, index1 + diff.text.length)) .. $];
 							}
 						}
 						if( diff.operation != Operation.DELETE ){
@@ -371,7 +377,7 @@ PatchApplyResultT!Str apply(Str)(PatchT!(Str)[] patches, Str text)
  * @param patches Array of PatchT objects.
  * @return The padding string added to each side.
  */
-Str addPadding(Str)(PatchT!(Str)[] patches)
+Str addPadding(Str)(ref PatchT!(Str)[] patches)
 {
 	auto paddingLength = PATCH_MARGIN;
 	Str nullPadding;
@@ -380,47 +386,47 @@ Str addPadding(Str)(PatchT!(Str)[] patches)
 	}
 
 	// Bump all the patches forward.
-	foreach( patch; patches ){
+	foreach( ref patch; patches ){
 		patch.start1 += paddingLength;
 		patch.start2 += paddingLength;
 	}
 
 	// Add some padding on start of first diff.
-	PatchT!Str patch = patches[0];
-	auto diffs = patch.diffs;
-	if( diffs.length == 0 || diffs[0].operation != Operation.EQUAL ){
+	PatchT!(Str)* firstPatch = &(patches[0]);
+	auto firstPatchDiffs = &(firstPatch.diffs);
+	if( firstPatchDiffs.length == 0 || (*firstPatchDiffs)[0].operation != Operation.EQUAL ){
 		// Add nullPadding equality.
-		diffs.insert(0, [DiffT!Str(Operation.EQUAL, nullPadding)]);
-		patch.start1 -= paddingLength;  // Should be 0.
-		patch.start2 -= paddingLength;  // Should be 0.
-		patch.length1 += paddingLength;
-		patch.length2 += paddingLength;
-	} else if (paddingLength > diffs[0].text.length) {
+		(*firstPatchDiffs).insert(0, [DiffT!Str(Operation.EQUAL, nullPadding)]);
+		firstPatch.start1 -= paddingLength;  // Should be 0.
+		firstPatch.start2 -= paddingLength;  // Should be 0.
+		firstPatch.length1 += paddingLength;
+		firstPatch.length2 += paddingLength;
+	} else if (paddingLength > (*firstPatchDiffs)[0].text.length) {
 		// Grow first equality.
-		DiffT!Str firstDiffT = diffs[0];
-		auto extraLength = paddingLength - firstDiffT.text.length;
-		firstDiffT.text = nullPadding.substr(firstDiffT.text.length) ~ firstDiffT.text;
-		patch.start1 -= extraLength;
-		patch.start2 -= extraLength;
-		patch.length1 += extraLength;
-		patch.length2 += extraLength;
+		DiffT!(Str)* firstDiff = &((*firstPatchDiffs)[0]);
+		auto extraLength = paddingLength - firstDiff.text.length;
+		firstDiff.text = nullPadding.substr(firstDiff.text.length) ~ firstDiff.text;
+		firstPatch.start1 -= extraLength;
+		firstPatch.start2 -= extraLength;
+		firstPatch.length1 += extraLength;
+		firstPatch.length2 += extraLength;
 	}
 
 	// Add some padding on end of last diff.
-	patch = patches[$-1];
-	diffs = patch.diffs;
-	if( diffs.length == 0 || diffs[$-1].operation != Operation.EQUAL) {
+	PatchT!(Str)* lastPatch = &(patches[0]);
+	auto lastPatchDiffs = &(lastPatch.diffs);
+	if( lastPatchDiffs.length == 0 || (*lastPatchDiffs)[$-1].operation != Operation.EQUAL) {
 		// Add nullPadding equality.
-		diffs ~= DiffT!Str(Operation.EQUAL, nullPadding);
-		patch.length1 += paddingLength;
-		patch.length2 += paddingLength;
-	} else if (paddingLength > diffs[$-1].text.length) {
+		(*lastPatchDiffs) ~= DiffT!Str(Operation.EQUAL, nullPadding);
+		lastPatch.length1 += paddingLength;
+		lastPatch.length2 += paddingLength;
+	} else if (paddingLength > (*lastPatchDiffs)[$-1].text.length) {
 		// Grow last equality.
-		DiffT!Str lastDiffT = diffs[$-1];
-		auto extraLength = paddingLength - lastDiffT.text.length;
-		lastDiffT.text ~= nullPadding.substr(0, extraLength);
-		patch.length1 += extraLength;
-		patch.length2 += extraLength;
+		DiffT!(Str)* lastDiff = &((*lastPatchDiffs)[$-1]);
+		auto extraLength = paddingLength - lastDiff.text.length;
+		lastDiff.text ~= nullPadding.substr(0, extraLength);
+		lastPatch.length1 += extraLength;
+		lastPatch.length2 += extraLength;
 	}
 	return nullPadding;
 }
@@ -431,13 +437,18 @@ Str addPadding(Str)(PatchT!(Str)[] patches)
  * Intended to be called only from within patch_apply.
  * @param patches List of PatchT objects.
  */
-void splitMax(Str)(PatchT!(Str)[] patches)
+void splitMax(Str)(ref PatchT!(Str)[] patches)
 {
 	auto patch_size = MATCH_MAXBITS;
-	for( auto x = 0; x < patches.length; x++ ){
-		if( patches[x].length1 <= patch_size ) continue;
-		PatchT!Str bigpatch = patches[x];
-		patches.splice(x--, 1);
+    int x = 0;  // The index of the next patch to check.
+    PatchT!Str bigpatch = x < patches.length ? patches[x++] : PatchT!Str();
+	while (!bigpatch.isNull()) {
+		if( bigpatch.length1 <= patch_size ) {
+            bigpatch = x < patches.length ? patches[x++] : PatchT!Str();
+            continue;
+        }
+        // Remove the big old patch.
+		patches.splice(--x, 1);
 		auto start1 = bigpatch.start1;
 		auto start2 = bigpatch.start2;
 		Str precontext;
@@ -450,7 +461,8 @@ void splitMax(Str)(PatchT!(Str)[] patches)
 				patch.length1 = patch.length2 = precontext.length;
 				patch.diffs ~= DiffT!Str(Operation.EQUAL, precontext);
 			}
-			while( bigpatch.diffs.length != 0 && patch.length1 < patch_size - PATCH_MARGIN ){
+			while( bigpatch.diffs.length != 0
+                    && patch.length1 < patch_size - PATCH_MARGIN ){
 				Operation diff_type = bigpatch.diffs[0].operation;
 				auto diff_text = bigpatch.diffs[0].text;
 				if( diff_type == Operation.INSERT ){
@@ -471,7 +483,8 @@ void splitMax(Str)(PatchT!(Str)[] patches)
               		bigpatch.diffs.remove(0);
 				} else {
 					// Deletion or equality. Only takes as much as we can stomach.
-					diff_text = diff_text.substr(0, min(diff_text.length, patch_size - patch.length1 - PATCH_MARGIN));
+					diff_text = diff_text.substr(0, min(diff_text.length,
+                            patch_size - patch.length1 - PATCH_MARGIN));
 					patch.length1 += diff_text.length;
 					start1 += diff_text.length;
 					if( diff_type == Operation.EQUAL ){
@@ -493,7 +506,7 @@ void splitMax(Str)(PatchT!(Str)[] patches)
 			precontext = precontext.substr(max(0, precontext.length - PATCH_MARGIN));
 
 			auto postcontext = diff_text1(bigpatch.diffs);
-			if( postcontext.length > PATCH_MARGIN ){
+			if( diff_text1(bigpatch.diffs).length > PATCH_MARGIN ){
 				postcontext =  postcontext.substr(0, PATCH_MARGIN);
 			}
 
@@ -501,17 +514,17 @@ void splitMax(Str)(PatchT!(Str)[] patches)
 				patch.length1 += postcontext.length;
 				patch.length2 += postcontext.length;
 				if( patch.diffs.length != 0
-					&& patch.diffs[patch.diffs.length - 1].operation
-					== Operation.EQUAL) {
-					patch.diffs[$].text ~= postcontext;
+                        && patch.diffs[$-1].operation == Operation.EQUAL) {
+					patch.diffs[$-1].text ~= postcontext;
 				} else {
 					patch.diffs ~= DiffT!Str(Operation.EQUAL, postcontext);
 				}
 			}
 			if( !empty ){
-				patches.splice(++x, 0, [patch]);
+				patches.splice(x++, 0, [patch]);
 			}
 		}
+        bigpatch = x < patches.length ? patches[x++] : PatchT!Str();
 	}
 }
 

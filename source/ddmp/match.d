@@ -29,6 +29,7 @@ import std.range : ElementEncodingType;
 import std.string;
 import std.utf : toUTF16, toUTF8;
 import std.traits : isSomeString, Unqual;
+import std.exception : enforce;
 
 import ddmp.util;
 
@@ -69,7 +70,7 @@ if (isSomeString!Str) {
 sizediff_t bitap(Str)(Str text, Str pattern, sizediff_t loc)
 if (isSomeString!Str) {
 	// bits need to fit into the positive part of an int
-	assert(pattern.length <= 31);
+	enforce(pattern.length <= 32, "Pattern too long for this application.");
 
 	int[Unqual!(ElementEncodingType!Str)] s = initAlphabet(pattern);
 	double score_threshold = MATCH_THRESHOLD;
